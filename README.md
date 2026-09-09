@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/logo.png" alt="MIMOSA" width="640">
+</p>
+
 # MIMOSA: Multi-Input Multi-Output Sample Analysis 
 
 A fully-featured *multi-task Gaussian process framework* for analysing functional data.

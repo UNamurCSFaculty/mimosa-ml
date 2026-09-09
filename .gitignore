@@ -3,3 +3,5 @@ docs/examples/data/dummy_mo.csv
 __pycache__/
 .ipynb_checkpoints
 docs/_build/
+/docs/images/logo_flower.png
+/docs/images/logo_samples.png
