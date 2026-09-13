@@ -82,7 +82,10 @@ def mvn_nll(values: Array, mean: Array, cov: Array, jitter: Array = DEFAULT_JITT
 	-------
 	Negative log-likelihood of each channel. Shape `(C,)`.
 	"""
-	return vmap(single_channel_mvn_nll, in_axes=(0, 0, 0, None))(values.T, mean, cov, jitter)
+	mean_ax = None if mean.shape[0] == 1 else 0
+	cov_ax = None if cov.shape[0] == 1 else 0
+	f = vmap(single_channel_mvn_nll, in_axes=(0, mean_ax, cov_ax, None))
+	return f(values.T, mean[0] if mean_ax is None else mean, cov[0] if cov_ax is None else cov, jitter)
 
 
 def single_channel_trace_correction(value: Array, cov: Array, post_cov: Array, jitter: Array = DEFAULT_JITTER) -> Array:
@@ -142,10 +145,10 @@ def trace_correction(values: Array, cov: Array, post_cov: Array, jitter: Array =
 	-------
 	Trace correction term of each channel. Shape `(C,)`.
 	"""
-	C = values.shape[-1]
-	cov = jnp.broadcast_to(cov, (C,) + cov.shape[-2:])
-	post_cov = jnp.broadcast_to(post_cov, (C,) + post_cov.shape[-2:])
-	return vmap(single_channel_trace_correction, in_axes=(0, 0, 0, None))(values.T, cov, post_cov, jitter)
+	cov_ax = None if cov.shape[0] == 1 else 0
+	post_ax = None if post_cov.shape[0] == 1 else 0
+	f = vmap(single_channel_trace_correction, in_axes=(0, cov_ax, post_ax, None))
+	return f(values.T, cov[0] if cov_ax is None else cov, post_cov[0] if post_ax is None else post_cov, jitter)
 
 
 def magma_nll(values: Array, mean: Array, cov: Array, post_cov: Array, jitter: Array = DEFAULT_JITTER) -> Array:
@@ -190,14 +193,14 @@ def clusters_nlls(hyperposterior: Hyperposterior, hyperprior: Hyperprior, jitter
 	-------
 	Negative log-likelihood of every mean-process, for each channel. Shape `(K, C)`.
 	"""
-	hyperprior = Hyperprior(
-		mean=jnp.broadcast_to(hyperprior.mean, hyperposterior.mean.shape),
-		covariance=jnp.broadcast_to(hyperprior.covariance, hyperposterior.covariance.shape),
-	)
+	# A prior shared across mean-processes is read in place rather than expanded to the posterior's
+	# `(K, C)` batch shape; one shared across channels is left for `magma_nll` to read the same way.
+	# `Hyperprior` annotates `mean` and `covariance` with the same `*B`, so one axis covers the pair.
+	prior_ax = None if hyperprior.mean.shape[0] == 1 else 0
+	prior = hyperprior[0] if prior_ax is None else hyperprior
 
-	return vmap(magma_nll, in_axes=(0, 0, 0, 0, None))(
-		hyperposterior.mean.mT, hyperprior.mean, hyperprior.covariance, hyperposterior.covariance, jitter
-	)
+	f = vmap(magma_nll, in_axes=(0, prior_ax, prior_ax, 0, None))
+	return f(hyperposterior.mean.mT, prior.mean, prior.covariance, hyperposterior.covariance, jitter)
 
 
 def tasks_nlls(
@@ -224,16 +227,17 @@ def tasks_nlls(
 	-------
 	Negative log-likelihood of every task, under each mean-process, for each channel. Shape `(T, K, C)`.
 	"""
-	task_covs = jnp.broadcast_to(
-		task_covs, (dataset.outputs.shape[0],) + hyperposterior.covariance.shape[:-2] + task_covs.shape[-2:]
-	)
+	task_ax = None if task_covs.shape[0] == 1 else 0
+	cluster_ax = None if task_covs.shape[1] == 1 else 0
 
 	def task_nll(outputs, mappings, task_cov):
 		post = hyperposterior.marginal(mappings)  # (K, C, O*N)
-		return vmap(lambda p, t_c: magma_nll(outputs, p.mean, t_c, p.covariance, jitter))(post, task_cov)
+		f = vmap(lambda p, t_c: magma_nll(outputs, p.mean, t_c, p.covariance, jitter), in_axes=(0, cluster_ax))
+		return f(post, task_cov[0] if cluster_ax is None else task_cov)
 
 	mappings = grid.mappings[0] if dataset.inputs.shape[0] == 1 else grid.mappings
-	return vmap(task_nll, in_axes=(0, None if mappings.ndim == 1 else 0, 0))(dataset.outputs, mappings, task_covs)
+	f = vmap(task_nll, in_axes=(0, None if mappings.ndim == 1 else 0, task_ax))
+	return f(dataset.outputs, mappings, task_covs[0] if task_ax is None else task_covs)
 
 
 class ClusterNLL(eqx.Module):
