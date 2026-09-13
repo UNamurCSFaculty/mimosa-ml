@@ -1,0 +1,10 @@
+/* The wide logo is drawn in deep RdPu ink on a transparent background. That measures ~12.5:1
+   against the light theme's white, but ~1.4:1 against the dark theme's background, where the name
+   is effectively invisible. Lifting the brightness in dark mode turns the deep magenta into a
+   legible pink without needing a second image.
+
+   Replace this with a proper dark asset (`html_theme_options["logo"] = {"image_light": ...,
+   "image_dark": ...}`) if `mimosa.logo` ever grows a light-ink variant. */
+html[data-theme="dark"] .logo__image {
+	filter: brightness(1.8) saturate(1.15);
+}

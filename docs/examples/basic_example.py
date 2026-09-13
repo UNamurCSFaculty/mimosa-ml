@@ -13,8 +13,8 @@ This example walks through the full pipeline on a synthetic dataset: configure t
 generate data and remove some points at random, fit a `BasicModel`, then predict a task and sample
 from that prediction.
 
-Written using jupytext's py:percent format. This script can be run cell-by-cell or as a usual Python
-script.
+Use the "launch" button to run it interactively in Colab or clone the repository and 
+run the `examples/basic_example.py` script!
 """
 
 # %% [markdown]
@@ -122,8 +122,7 @@ The initial values do not matter too much, but their *structure* does, which is 
 """
 
 # %% 5. Instantiate the model
-# n_clusters can differ from the true K above (the model doesn't know it); jitter is the numerical
-# stabiliser added before Cholesky factorizations, only increase it if you hit factorization errors.
+# n_clusters can differ from the true K above (the model doesn't know it).
 key, model_key = jr.split(key)
 model = BasicModel(prng_key=model_key, n_clusters=dims.K)
 
@@ -136,13 +135,12 @@ init_params = Parameters(
 		noise_kernel=WhiteNoiseKernel(noise=0.5))
 
 # build_parameters batches the base kernels/mean below to match model_config's sharing structure
-# (same helper generate_data uses internally), so their shapes line up with what model.fit expects.
+# so their shapes line up with what model.fit expects.
 init_params = build_parameters(init_params, dims, model_config)
 
 # %% 6. Fit
 # Grid construction (union of every task's input points) isn't jit-compatible, so it's built once
-# here by the caller, outside of fit/predict, rather than owned by the model — see
-# mimosa.grid.GridBuilder. Swap UnionGrid for another GridBuilder to change how the grid is built.
+# outside of fit/predict. Swap UnionGrid for another GridBuilder to change how the grid is built.
 fitted_grid = UnionGrid()(dataset.inputs)
 
 hyperposterior, fitted_mixture, fitted_params = model.fit(dataset, fitted_grid, init_params, n_iter=50)
@@ -155,10 +153,17 @@ plt.show()
 
 # %% [markdown]
 """
+Note: the model doesn't know the "true" mixture, so sometimes the indices of clusters in 
+`true_mixture` and `fitted_mixture` are swapped, making the plot colors weird. Send 
+`fitted_mixture` to `plot_dataset()` to color task based on their predicted cluster.
+"""
+
+# %% [markdown]
+"""
 ## Predicting
 
 Predictions are multimodal: the model returns one Gaussian process per cluster for each task. Here we
-simply keep the one of the task's most probable cluster.
+simply keep the one of the task's **most probable cluster**.
 
 Try changing `t_id` to see another task, and `k_id` to see what the prediction would look like if the
 task belonged to that cluster instead!
@@ -177,6 +182,12 @@ fig, ax = plot_single_task_prediction(
 )
 fig.suptitle(f"Prediction — task {t_id}, channel {c_id}")
 plt.show()
+
+# %% [markdown]
+"""
+It's often better to look at **samples** of the predictive distribution to get a true
+feeling about the actual shape of the predicted function.
+"""
 
 # %% 10. Draw samples from the prediction and plot them alongside it
 key, sample_key = jr.split(key)
@@ -197,9 +208,9 @@ plt.show()
 `fitted_grid` is the union of the observed locations, which is what fitting needs. To predict 
 somewhere else, merge that grid with the one you actually want, and run the prediction once on the merged pool.
 
-`MergedGrid` keeps the mappings of its first argument, so the merged grid still sees every
-observation, and records in `sources[i]` where argument `i`'s points landed. That is exactly the
-selector `marginal` takes, so the part of the prediction living on the regular grid is one call away.
+Using the `.marginal()` methods of the MultiVariateNormal providing the points from
+the second grid (aka `merged_grid.sources[1]`) allows you te retrieve the portion of
+the prediction related to this exact grid.
 """
 
 # %% 11. Merge an evenly-spaced grid into the fitted one
