@@ -16,6 +16,7 @@ from kernax.hp_sampling import sample_hps_from_uniform_priors
 from mimosa.data_structures import (
 	Dimensions,
 	Parameters,
+	GPParameters,
 	ParameterPriors,
 	ModelConfig,
 	Hyperprior,
@@ -38,6 +39,7 @@ __all__ = [
 	"build_task_kernel",
 	"known_noise_kernel",
 	"build_parameters",
+	"build_gp_parameters",
 	"sample_parameters_from_priors",
 	"generate_data",
 	"AbstractDataRemover",
@@ -376,6 +378,48 @@ def build_parameters(parameters: Parameters, dims: Dimensions, config: ModelConf
 	)
 
 
+def build_gp_parameters(parameters: GPParameters, n_channels: int, shared_channel_hps: bool = True) -> GPParameters:
+	"""
+	Batch every field of `parameters` (GP mean, kernel, noise kernel) over the channel axis.
+
+	`parameters` should hold the "base" mean/kernels, i.e. the ones used if all HPs were shared. If
+	`O > 1`, they should already be wrapped in a multi-output mean/kernel (`BlockMean`,
+	`BlockDiagKernel`, `ICMKernel`, ...) to handle the output structure.
+
+	Parameters
+	----------
+	parameters
+		Base GP mean, kernel and noise kernel to batch.
+	n_channels
+		Number of channels, i.e. `C`.
+	shared_channel_hps
+		If True, a single set of hyperparameters is held behind `n_channels` identical copies; if
+		False, each channel carries its own.
+
+	Returns
+	-------
+	`parameters` with every field batched over the channel axis, with independent hyperparameters per
+	channel if `shared_channel_hps` is False.
+
+	Notes
+	-----
+	Shared hyperparameters are expanded to `n_channels` copies rather than kept as the single copy
+	`build_mean`/`build_task_kernel` leave (`batch_size=1`): `mimosa.prediction.predict_gp` vmaps the
+	mean's channel axis against `outputs`' `C` columns, so a mean of leading size 1 cannot be paired
+	with them.
+	"""
+	axes = None if shared_channel_hps else 0
+
+	def batch(module: AbstractModule) -> AbstractModule:
+		return BatchModule(module, batch_size=n_channels, batch_in_axes=axes, batch_over_inputs=False)
+
+	return GPParameters(
+		mean=batch(parameters.mean),
+		kernel=batch(parameters.kernel),
+		noise_kernel=batch(parameters.noise_kernel),
+	)
+
+
 def sample_parameters_from_priors(key: Array, parameters: Parameters, priors: ParameterPriors) -> Parameters:
 	"""
 	Sample every field of `parameters` (cluster mean/kernel, task/noise kernel) uniformly from
@@ -415,6 +459,7 @@ def generate_data(
 	priors: ParameterPriors | None = None,
 	input_range: None | list[tuple[float, float]] = None,
 	jitter: Array = DEFAULT_JITTER,
+	skip_parameter_build: bool = False,
 ) -> tuple[Dataset, Grid, Hyperprior, Mixture, Parameters, Array, MultivariateNormal]:
 	"""
 	Generate a synthetic multi-task, multi-cluster dataset from GP priors.
@@ -437,6 +482,11 @@ def generate_data(
 		Min and max value for input points of every output. Applied to every input dimension. Default is (-50, 50) for every output.
 	jitter
 		Diagonal jitter added before Cholesky factorizations, for numerical stability.
+	skip_parameter_build
+		If True, `parameters` is used as-is, without calling `build_parameters` on it. Pass an
+		already-batched `Parameters` (e.g. `build_parameters(...)` whose hyperparameters were then
+		set per task/cluster/channel) to generate data from chosen hyperparameters rather than from
+		a single base value or from `priors`. `parameters` must already match `dims` and `config`.
 
 	Returns
 	-------
@@ -482,8 +532,9 @@ def generate_data(
 	# Step 2: sample the input grid
 	inputs, output_ids, mappings = sample_inputs(key, grid, dims, config)  # Varying shapes
 
-	# Step 3: batch kernels
-	parameters = build_parameters(parameters, dims, config)
+	# Step 3: batch kernels, unless the caller already did
+	if not skip_parameter_build:
+		parameters = build_parameters(parameters, dims, config)
 
 	# Step 4: sample HPs from priors
 	if priors is not None:

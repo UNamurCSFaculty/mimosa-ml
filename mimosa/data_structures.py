@@ -19,8 +19,10 @@ __all__ = [
 	"DataRemovalConfig",
 	"validate_model_config",
 	"Parameters",
+	"GPParameters",
 	"ParameterPriors",
 	"Dataset",
+	"GPDataset",
 	"Grid",
 	"MultivariateNormal",
 	"Hyperprior",
@@ -191,6 +193,27 @@ class Parameters(eqx.Module):
 	noise_kernel: KernelLike
 
 
+class GPParameters(eqx.Module):
+	"""
+	Prior mean, kernel and noise kernel of a single Gaussian process, used by `mimosa.models.GPModel`.
+
+	Every field is batched over the channel axis. Build them through `mimosa.synthetic.build_gp_parameters`.
+
+	Attributes
+	----------
+	mean
+		Prior mean function of the Gaussian process.
+	kernel
+		Prior covariance kernel of the Gaussian process.
+	noise_kernel
+		Covariance kernel modelling the observation noise.
+	"""
+
+	mean: MeanLike
+	kernel: KernelLike
+	noise_kernel: KernelLike
+
+
 @dataclass(frozen=True)
 class ParameterPriors:
 	"""
@@ -253,6 +276,34 @@ class Dataset(eqx.Module):
 		point.
 		"""
 		return jnp.nan_to_num(self.inputs)
+
+
+@jaxtyped(typechecker=typechecker)
+class GPDataset(eqx.Module):
+	"""
+	Observations of a single Gaussian process, over `O` correlated outputs and `C` channels, used by
+	`mimosa.models.GPModel`.
+
+	Contrary to Dataset, `inputs` can't have NaN padding -- a NaN there poisons every hyperparameter's gradient
+	(see `Dataset.clean_inputs`); drop an unobserved row instead. A NaN in `outputs` is still read as
+	a missing value, so an output or a channel may be missing at a kept input point.
+
+	Attributes
+	----------
+	inputs
+		Input points. Shape `(N, I)` when the outputs share their input locations -- a multi-output
+		kernel expands them into `O` blocks itself -- and `(O*N, I)` otherwise, in which case
+		`output_ids` labels each row. A single-output GP is `O = 1` with `output_ids=None`.
+	outputs
+		Observed values, at each output and input point.
+	output_ids
+		IDs of the output of each input point. None if the outputs share their input locations, else
+		shape `(O*N,)`.
+	"""
+
+	inputs: Float[Array, "oN I"]  # "o" is 1 if the outputs share their input locations, and O otherwise
+	outputs: Float[Array, "ON C"]
+	output_ids: None | Int[Array, "oN"] = None
 
 
 @jaxtyped(typechecker=typechecker)

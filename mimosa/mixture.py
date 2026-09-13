@@ -148,6 +148,12 @@ class KMeansMixtureInitialiser(MixtureInitialiser):
 		# feature, which poisons every distance in the k-means rather than just that one coordinate.
 		features = jnp.nan_to_num(features)
 
+		# Standardise before clustering: `soft_kmeans`' stiffness acts on raw squared distances, so
+		# unstandardised features tie the clustering to the data's units. On a unit-scale dataset the
+		# distances shrink until every responsibility goes uniform and the centers collapse onto the
+		# global mean -- one cluster holding every task.
+		features = (features - features.mean(axis=0)) / jnp.maximum(features.std(axis=0), 1e-9)
+
 		_, resp = soft_kmeans(self.prng_key, features, self.n_clusters, n_restarts=self.n_restarts)
 		return Mixture(responsibilities=resp)
 

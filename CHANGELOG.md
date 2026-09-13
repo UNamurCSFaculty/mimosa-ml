@@ -9,6 +9,20 @@ before upgrading.
 
 ---
 
+## Unreleased
+
+### Added
+
+* `mimosa.models.GPModel`: fit and predict a vanilla (single-task) GP, with the same correlated-output
+  and multi-channel support as `BasicModel`. Takes a `GPDataset` and `GPParameters`, built by
+  `mimosa.synthetic.build_gp_parameters`, and predicts through `mimosa.prediction.GPPredictor`, whose
+  `noisy` field selects $f(x^*)$ or $y(x^*)$.
+* `skip_parameter_build` on `mimosa.synthetic.generate_data`: use the given `Parameters` as-is,
+  instead of rebuilding them with `build_parameters`.
+* new `kind` argument in plot functions to plot task as dots or curves.
+
+---
+
 ## [v0.4.0-alpha] — 2026-09-06
 
 ### Added

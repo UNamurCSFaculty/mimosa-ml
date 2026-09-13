@@ -23,7 +23,9 @@ from mimosa.data_structures import (
 	ModelConfig,
 	DataRemovalConfig,
 	Parameters,
+	GPParameters,
 	ParameterPriors,
+	GPDataset,
 	Grid,
 	Mixture,
 	Hyperprior,
@@ -41,7 +43,7 @@ from mimosa.laplace import (
 	ExponentialLaplaceApproximator,
 )
 from mimosa.mixture import KMeansMixtureInitialiser
-from mimosa.models import BasicModel
+from mimosa.models import BasicModel, GPModel
 from mimosa.plot import (
 	plot_channel,
 	plot_task,
@@ -51,12 +53,13 @@ from mimosa.plot import (
 	plot_clusters,
 	plot_single_task_prediction,
 )
-from mimosa.prediction import FunctionPredictor, ObservationPredictor
+from mimosa.prediction import FunctionPredictor, ObservationPredictor, GPPredictor
 from mimosa.sampling import sample_gp
 from mimosa.synthetic import (
 	generate_data,
 	known_noise_kernel,
 	build_parameters,
+	build_gp_parameters,
 	sample_parameters_from_priors,
 	RandomDataRemover,
 )
@@ -67,10 +70,12 @@ __all__ = [
 	"PAD_INDEX",
 	# data structures
 	"Dataset",
+	"GPDataset",
 	"Dimensions",
 	"ModelConfig",
 	"DataRemovalConfig",
 	"Parameters",
+	"GPParameters",
 	"ParameterPriors",
 	"Grid",
 	"Mixture",
@@ -95,10 +100,12 @@ __all__ = [
 	"ExponentialLaplaceApproximator",
 	# models and prediction
 	"BasicModel",
+	"GPModel",
 	"KMeansMixtureInitialiser",
 	"one_shot_hyperpost",
 	"FunctionPredictor",
 	"ObservationPredictor",
+	"GPPredictor",
 	# plotting
 	"plot_channel",
 	"plot_task",
@@ -112,6 +119,7 @@ __all__ = [
 	"generate_data",
 	"known_noise_kernel",
 	"build_parameters",
+	"build_gp_parameters",
 	"sample_parameters_from_priors",
 	"RandomDataRemover",
 ]

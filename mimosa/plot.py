@@ -49,6 +49,7 @@ _STYLE = "seaborn-v0_8-whitegrid"
 IdArg = int | Literal["all"]
 
 _DEFAULT_SCATTER_KWARGS = {"s": 15, "alpha": 0.7}
+_DEFAULT_LINE_KWARGS = {"linewidth": 1.0, "alpha": 0.7}
 
 
 def _resolve_ids(id_arg: IdArg, size: int) -> list[int]:
@@ -191,6 +192,7 @@ def plot_channel(
 	ax=None,
 	figsize: tuple[float, float] | None = None,
 	color="C0",
+	kind: Literal["scatter", "line"] = "scatter",
 	**scatter_kwargs,
 ):
 	"""
@@ -218,8 +220,11 @@ def plot_channel(
 		Passed to `plt.subplots` when a new figure is created.
 	color
 		Color of this task's points.
+	kind
+		"scatter" (default) draws each task's points, "line" joins them into a curve.
 	**scatter_kwargs
-		Extra keyword arguments forwarded to `ax.scatter`, overriding the defaults (s=15, alpha=0.7).
+		Extra keyword arguments forwarded to `ax.scatter` (`ax.plot` when `kind="line"`), overriding
+		the defaults (s=15, alpha=0.7; linewidth=1.0, alpha=0.7 for a line).
 
 	Returns
 	-------
@@ -233,12 +238,15 @@ def plot_channel(
 
 	fig, ax = _get_fig_ax(fig, ax, len(o_ids), 1, figsize=figsize)
 
-	kwargs = _DEFAULT_SCATTER_KWARGS | scatter_kwargs
+	if kind not in ("scatter", "line"):
+		raise ValueError(f"Expected kind 'scatter' or 'line', got {kind!r}.")
+
+	kwargs = (_DEFAULT_LINE_KWARGS if kind == "line" else _DEFAULT_SCATTER_KWARGS) | scatter_kwargs
 
 	for row, o in enumerate(o_ids):
 		x, y = _task_xy(dataset, dims, t_id, c_id, o)
 		a = ax[row, 0]
-		a.scatter(x, y, color=color, **kwargs)
+		(a.plot if kind == "line" else a.scatter)(x, y, color=color, **kwargs)
 		a.set_title(f"channel {c_id}" + (f", output {o}" if len(o_ids) > 1 else ""))
 		a.set_xlabel("input")
 		a.set_ylabel("channel value")
@@ -256,6 +264,7 @@ def plot_task(
 	ax=None,
 	figsize: tuple[float, float] | None = None,
 	color="C0",
+	kind: Literal["scatter", "line"] = "scatter",
 	**scatter_kwargs,
 ):
 	"""
@@ -278,8 +287,11 @@ def plot_task(
 		Passed to `plt.subplots` when a new figure is created.
 	color
 		Color of this task's points.
+	kind
+		"scatter" (default) draws each task's points, "line" joins them into a curve.
 	**scatter_kwargs
-		Extra keyword arguments forwarded to `ax.scatter`, overriding the defaults (s=15, alpha=0.7).
+		Extra keyword arguments forwarded to `ax.scatter` (`ax.plot` when `kind="line"`), overriding
+		the defaults (s=15, alpha=0.7; linewidth=1.0, alpha=0.7 for a line).
 
 	Returns
 	-------
@@ -292,7 +304,9 @@ def plot_task(
 	fig, ax = _get_fig_ax(fig, ax, len(o_ids), len(c_ids), figsize=figsize)
 
 	for col, c in enumerate(c_ids):
-		plot_channel(dataset, dims, t_id, c, o_id=o_id, fig=fig, ax=ax[:, col : col + 1], color=color, **scatter_kwargs)
+		plot_channel(
+			dataset, dims, t_id, c, o_id=o_id, fig=fig, ax=ax[:, col : col + 1], color=color, kind=kind, **scatter_kwargs
+		)
 
 	return fig, ax
 
@@ -309,6 +323,7 @@ def plot_dataset(
 	figsize: tuple[float, float] | None = None,
 	color_by_task: bool = False,
 	legend: bool = True,
+	kind: Literal["scatter", "line"] = "scatter",
 	**scatter_kwargs,
 ):
 	"""
@@ -339,8 +354,11 @@ def plot_dataset(
 		If True, add a legend mapping colors to cluster indices (if `mixture` is given) or to task
 		indices (if `color_by_task` is True). Skipped when more tasks are plotted than the palette
 		has distinct colors, since colors then repeat across tasks.
+	kind
+		"scatter" (default) draws each task's points, "line" joins them into a curve.
 	**scatter_kwargs
-		Extra keyword arguments forwarded to `ax.scatter`, overriding the defaults (s=15, alpha=0.7).
+		Extra keyword arguments forwarded to `ax.scatter` (`ax.plot` when `kind="line"`), overriding
+		the defaults (s=15, alpha=0.7; linewidth=1.0, alpha=0.7 for a line).
 
 	Returns
 	-------
@@ -375,7 +393,7 @@ def plot_dataset(
 		]
 
 	for t in t_ids:
-		plot_task(dataset, dims, t, c_id=c_id, o_id=o_id, fig=fig, ax=ax, color=colors[t], **scatter_kwargs)
+		plot_task(dataset, dims, t, c_id=c_id, o_id=o_id, fig=fig, ax=ax, color=colors[t], kind=kind, **scatter_kwargs)
 
 	if legend and handles:
 		fig.legend(handles=handles, loc="outside right center")

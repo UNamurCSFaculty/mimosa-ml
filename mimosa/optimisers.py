@@ -9,11 +9,11 @@ from equinox import combine
 import equinox as eqx
 from kernax import AbstractMean, AbstractKernel
 
-from mimosa.nll import ClusterNLL, TaskNLL
-from mimosa.data_structures import Dataset, Grid, Hyperprior, Hyperposterior, Mixture
+from mimosa.nll import ClusterNLL, TaskNLL, mvn_nll
+from mimosa.data_structures import Dataset, GPDataset, GPParameters, Grid, Hyperprior, Hyperposterior, Mixture
 from mimosa.constants import DEFAULT_JITTER
 
-__all__ = ["optimise_clusters", "optimise_tasks", "ClusterOptimiser", "TaskOptimiser"]
+__all__ = ["optimise_clusters", "optimise_tasks", "optimise_gp", "ClusterOptimiser", "TaskOptimiser"]
 
 
 def optimise_clusters(
@@ -141,6 +141,45 @@ def optimise_tasks(
 		).sum()
 
 	return optx.minimise(loss_fn, solver, task_kernel, task_kernel_frozen, throw=throw)
+
+
+def optimise_gp(
+	parameters: GPParameters,
+	dataset: GPDataset,
+	solver: optx.AbstractMinimiser = optx.LBFGS(atol=1e-4, rtol=1e-4),
+	jitter: Array = DEFAULT_JITTER,
+	throw: bool = False,
+) -> optx.Solution:
+	"""
+	Maximum-likelihood optimisation of a single Gaussian process's hyperparameters, against the GP
+	marginal likelihood `-log p(y | X, theta)`.
+
+	Parameters
+	----------
+	parameters
+		GP mean, kernel and noise kernel to optimise, batched over channels (see
+		`mimosa.synthetic.build_gp_parameters`).
+	dataset
+		Observations of the Gaussian process whose hyperparameters are optimised.
+	solver
+		Optimistix minimiser.
+	jitter
+		Diagonal jitter added before Cholesky factorizations, for numerical stability.
+	throw
+		If True, raise on optimisation failure instead of returning a failed `optx.Solution`.
+
+	Returns
+	-------
+	Optimistix solution, whose `.value` is the optimised `GPParameters`.
+	"""
+
+	def loss_fn(params, data):
+		ids = data.output_ids
+		cov = params.kernel(data.inputs, output_ids=ids) + params.noise_kernel(data.inputs, output_ids=ids)
+		# Channels are independent given the hyperparameters, so their NLLs simply add up.
+		return mvn_nll(data.outputs, params.mean(data.inputs, output_ids=ids), cov, jitter=jitter).sum()
+
+	return optx.minimise(loss_fn, solver, parameters, dataset, throw=throw)
 
 
 class ClusterOptimiser(eqx.Module):

@@ -13,7 +13,9 @@ import equinox as eqx
 from mimosa.linalg import cho_factor
 from mimosa.data_structures import (
 	Parameters,
+	GPParameters,
 	Dataset,
+	GPDataset,
 	Grid,
 	Hyperposterior,
 	PredictionMeanBlocks,
@@ -27,9 +29,11 @@ __all__ = [
 	"predict_task_in_cluster",
 	"predict_clusters",
 	"predict",
+	"predict_gp",
 	"Predictor",
 	"FunctionPredictor",
 	"ObservationPredictor",
+	"GPPredictor",
 ]
 
 
@@ -290,6 +294,58 @@ def predict(
 	)(dataset.outputs, mappings, hyperposterior, task_cov_blocks, jitter)
 
 
+def predict_gp(
+	dataset: GPDataset,
+	grid: Grid,
+	parameters: GPParameters,
+	noisy: bool = False,
+	jitter: Array = DEFAULT_JITTER,
+) -> MultivariateNormal:
+	"""
+	Predict a single Gaussian process's outputs at the grid points, by GP conditioning on its
+	observed values.
+
+	Parameters
+	----------
+	dataset
+		Observations of the Gaussian process, conditioned on.
+	grid
+		Grid of points to predict at. Only `points`, `output_ids` and `n_outputs` are read: with no
+		task axis there is nothing to map onto the grid, so `mappings` may be left out.
+	parameters
+		GP mean, kernel and noise kernel, batched over channels (see
+		`mimosa.synthetic.build_gp_parameters`).
+	noisy
+		Whether to include observation noise at the predicted points. Noise at a predicted point is
+		independent of the noise on the observations, so it enters `cov_grid` only and never
+		`cov_crossed` -- including where a grid point coincides with an observed input.
+	jitter
+		Diagonal jitter added before Cholesky factorization, for numerical stability.
+
+	Returns
+	-------
+	Predicted distribution over the Gaussian process's channels at the grid points, of shapes
+	`(C, O*G)` and `(C, O*G, O*G)`.
+	"""
+	x, obs_ids = dataset.inputs, dataset.output_ids
+	cross_points, cross_ids = _cross_grid(grid, obs_ids)
+
+	return predict_task_in_cluster(
+		dataset.outputs,
+		PredictionMeanBlocks(
+			mean_obs=parameters.mean(x, output_ids=obs_ids),
+			mean_grid=parameters.mean(grid.points, output_ids=grid.output_ids),
+		),
+		PredictionCovBlocks(
+			cov_obs=parameters.kernel(x, output_ids=obs_ids) + parameters.noise_kernel(x, output_ids=obs_ids),
+			cov_grid=parameters.kernel(grid.points, output_ids=grid.output_ids)
+			+ (parameters.noise_kernel(grid.points, output_ids=grid.output_ids) if noisy else 0.0),
+			cov_crossed=parameters.kernel(x, cross_points, output_ids=obs_ids, output_ids2=cross_ids),
+		),
+		jitter,
+	)
+
+
 class Predictor(eqx.Module):
 	"""
 	Base class for callable wrappers around `predict`, as `equinox.Module` subclasses.
@@ -341,3 +397,30 @@ class ObservationPredictor(Predictor):
 	"""
 
 	noisy = True
+
+
+class GPPredictor(eqx.Module):
+	r"""
+	Callable wrapper around `predict_gp`, as an `equinox.Module`.
+
+	Attributes
+	----------
+	noisy
+		Whether to predict an observation $y(x^*) = f(x^*) + \varepsilon$ rather than the latent
+		function $f(x^*)$, i.e. whether to include observation noise at the predicted points. See
+		`predict_gp`.
+	"""
+
+	noisy: bool = eqx.field(static=True, default=False)
+
+	def __call__(
+		self,
+		dataset: GPDataset,
+		grid: Grid,
+		parameters: GPParameters,
+		jitter: Array = DEFAULT_JITTER,
+	) -> MultivariateNormal:
+		"""
+		See `predict_gp`.
+		"""
+		return predict_gp(dataset, grid, parameters, self.noisy, jitter)

@@ -13,13 +13,22 @@ from jax_tqdm import loop_tqdm
 
 from mimosa.hyperpost import Hyperpost
 from mimosa.nll import ClusterNLL, TaskNLL
-from mimosa.optimisers import ClusterOptimiser, TaskOptimiser
+from mimosa.optimisers import ClusterOptimiser, TaskOptimiser, optimise_gp
 from mimosa.mixture import KMeansMixtureInitialiser, MixtureInitialiser, MixtureUpdater
-from mimosa.prediction import FunctionPredictor, Predictor
-from mimosa.data_structures import Dataset, Grid, Mixture, Parameters, MultivariateNormal, Hyperposterior
+from mimosa.prediction import FunctionPredictor, GPPredictor, Predictor
+from mimosa.data_structures import (
+	Dataset,
+	GPDataset,
+	Grid,
+	Mixture,
+	Parameters,
+	GPParameters,
+	MultivariateNormal,
+	Hyperposterior,
+)
 from mimosa.constants import DEFAULT_JITTER
 
-__all__ = ["AbstractModel", "BasicModel"]
+__all__ = ["AbstractModel", "BasicModel", "GPModel"]
 
 
 class AbstractModel(eqx.Module):
@@ -284,3 +293,92 @@ class BasicModel(AbstractModel):
 		"""
 		hyperposterior = self.hyperpost(dataset, grid, mixture, parameters, jitter=self.jitter)
 		return self.predictor(dataset, grid, hyperposterior, parameters, jitter=self.jitter)
+
+
+class GPModel(AbstractModel):
+	"""
+	Vanilla (single-task) Gaussian process: LBFGS-optimised hyperparameters, then exact GP
+	conditioning.
+
+	`fit` is a single minimisation of the GP marginal likelihood returning the fitted `GPParameters`.
+
+	Works with correlated outputs and channels too.
+
+	Unlike `BasicModel`, the `Grid` is needed only to `predict`: with no task to align, nothing is
+	mapped onto it during the fit.
+
+	Attributes
+	----------
+	solver
+		Optimistix minimiser for the GP's hyperparameters.
+	predictor
+		Computes predictions from a fitted model: `mimosa.prediction.GPPredictor`, whose `noisy` field
+		selects the latent function or an observation of it.
+	jitter
+		Diagonal jitter added before Cholesky factorizations, for numerical stability.
+	"""
+
+	solver: optx.AbstractMinimiser
+	predictor: GPPredictor
+	jitter: Array
+
+	def __init__(
+		self,
+		solver: optx.AbstractMinimiser = optx.LBFGS(atol=1e-3, rtol=1e-3),
+		predictor: GPPredictor = GPPredictor(),
+		jitter: Array = DEFAULT_JITTER,
+	):
+		"""
+		Parameters
+		----------
+		solver
+			Optimistix minimiser for the GP's hyperparameters.
+		predictor
+			Whether `predict` returns the latent function (`GPPredictor()`, the default) or an
+			observation of it, including observation noise (`GPPredictor(noisy=True)`).
+		jitter
+			Diagonal jitter added before Cholesky factorizations, for numerical stability.
+		"""
+		self.solver = solver
+		self.predictor = predictor
+		self.jitter = jitter
+
+	@eqx.filter_jit
+	def fit(self, dataset: GPDataset, parameters: GPParameters) -> GPParameters:
+		"""
+		Fit the GP's mean, kernel and noise hyperparameters by maximum likelihood.
+
+		Parameters
+		----------
+		dataset
+			Observations of the Gaussian process to fit.
+		parameters
+			Initial GP mean, kernel and noise kernel, batched over channels (see
+			`mimosa.synthetic.build_gp_parameters`).
+
+		Returns
+		-------
+		Fitted GP parameters.
+		"""
+		return optimise_gp(parameters, dataset, solver=self.solver, jitter=self.jitter).value
+
+	@eqx.filter_jit
+	def predict(self, dataset: GPDataset, grid: Grid, parameters: GPParameters) -> MultivariateNormal:
+		"""
+		Predict the GP's outputs at the grid points, for a fitted model.
+
+		Parameters
+		----------
+		dataset
+			Observations of the Gaussian process to condition the prediction on.
+		grid
+			Grid of points to predict at, e.g. from `mimosa.grid.RegularGrid`. Its `mappings` are not
+			needed here.
+		parameters
+			Fitted GP parameters.
+
+		Returns
+		-------
+		Predicted distribution over the Gaussian process's channels at the grid points.
+		"""
+		return self.predictor(dataset, grid, parameters, jitter=self.jitter)
