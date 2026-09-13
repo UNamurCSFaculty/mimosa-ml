@@ -432,9 +432,9 @@ def merge_multioutput_datasets(datasets: Sequence[Dataset]) -> Dataset:
 	multi-output Dataset. Inverse of `split_into_single_output_datasets`.
 
 	Every dataset must describe the same tasks, in the same order -- `load_csv` guarantees this
-	(by validating every CSV shares the same set of `TaskID`s) before calling `load_single_csv` on
-	each file and this function on the results; `Dataset` itself doesn't carry `TaskID`s, so this
-	function can't check or realign them itself.
+	(by validating every CSV shares the same set of `TaskID` values) before calling
+	`load_single_csv` on each file and this function on the results; `Dataset` itself doesn't carry
+	`TaskID` values, so this function can't check or realign them itself.
 
 	Parameters
 	----------
@@ -498,7 +498,7 @@ def load_csv(csv_path: str | Path | Sequence[str | Path], output_groups: Sequenc
 	------
 	ValueError
 		If `output_groups` is given together with a sequence `csv_path`, or if `csv_path` is a
-		sequence and the files don't all share the same set of `TaskID`s.
+		sequence and the files don't all share the same set of `TaskID` values.
 	"""
 	if isinstance(csv_path, (str, Path)):
 		return load_single_csv(csv_path, output_groups)

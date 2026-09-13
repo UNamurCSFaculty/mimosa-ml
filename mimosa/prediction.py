@@ -292,7 +292,7 @@ def predict(
 
 class Predictor(eqx.Module):
 	"""
-	Base class for callable wrappers around `predict`, as `equinox.Module`s.
+	Base class for callable wrappers around `predict`, as `equinox.Module` subclasses.
 
 	Subclasses set `noisy`, which selects what is predicted: the latent function, or an observation
 	of it at the predicted points.

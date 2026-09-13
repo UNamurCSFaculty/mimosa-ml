@@ -79,11 +79,12 @@ def searchsorted_2d(vector: Array, matrix: Array) -> Array:
 	Find the index of `vector` in `matrix`, along axis 0.
 
 	`matrix`'s rows must be sorted lexicographically (see `lexicographic_sort`), e.g.:
-	[[1, 1, 0],
-	 [1, 2, 1],
-	 [1, 2, 2],
-	 [2, 1, 3],
-	 [2, 2, 1]]
+
+		[[1, 1, 0],
+		 [1, 2, 1],
+		 [1, 2, 2],
+		 [2, 1, 3],
+		 [2, 2, 1]]
 
 	Uses a fixed number of bisection steps (`fori_loop`, from `matrix`'s static shape) so this is jit- and vmap-compatible.
 
