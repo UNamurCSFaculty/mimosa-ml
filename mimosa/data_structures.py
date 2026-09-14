@@ -6,6 +6,7 @@ Structures are plain dataclasses, or `equinox.Module` when they must be passed t
 """
 
 from dataclasses import dataclass, fields
+from typing import Literal
 from jaxtyping import Array, Float, Int, jaxtyped
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -13,7 +14,10 @@ from beartype import beartype as typechecker
 import equinox as eqx
 from kernax import MeanLike, KernelLike
 
+from mimosa.mappings import ExactInputMapper, InputMapper
+
 __all__ = [
+	"IdArg",
 	"Dimensions",
 	"ModelConfig",
 	"DataRemovalConfig",
@@ -171,6 +175,23 @@ def validate_model_config(model_config: ModelConfig, dimensions: Dimensions) -> 
 		raise ValueError("Cannot have isotopic output in tasks with inputs sampled from an heterotopic grid")
 
 
+IdArg = int | Literal["all"]
+
+
+def _resolve_ids(id_arg: IdArg, size: int) -> list[int]:
+	"""
+	Resolve a t_id/k_id/c_id/o_id argument into a list of indices: every index if "all",
+	or a single-element list if an int.
+	"""
+	if id_arg == "all":
+		return list(range(size))
+	if isinstance(id_arg, int):
+		if not (0 <= id_arg < size):
+			raise ValueError(f"Index {id_arg} out of range for size {size}.")
+		return [id_arg]
+	raise TypeError(f"Expected 'all' or int, got {id_arg!r}.")
+
+
 class Parameters(eqx.Module):
 	"""
 	Cluster mean, cluster kernel, task kernel and noise kernel of the model.
@@ -272,7 +293,7 @@ class Dataset(eqx.Module):
 		be finite: `jnp.where` does not stop NaN in the VJP (`0 * NaN = NaN`), so a single padded
 		point turns every kernel hyperparameter's gradient into NaN and freezes the optimiser.
 
-		Never pass this to a `GridBuilder`: 0 is a real input location and would add a spurious grid
+		Never pass this to a grid builder: 0 is a real input location and would add a spurious grid
 		point.
 		"""
 		return jnp.nan_to_num(self.inputs)
@@ -329,6 +350,28 @@ class Grid(eqx.Module):
 	output_ids: None | Int[Array, "FG"] = None
 	mappings: None | Int[Array, "#T N"] = None
 	n_outputs: int = eqx.field(static=True, default=1)
+
+	def remap(self, inputs: Float[Array, "#T N I"], input_mapper: InputMapper = ExactInputMapper()) -> "Grid":
+		"""
+		The same grid points, with `inputs` mapped onto them instead of this grid's own inputs.
+
+		Parameters
+		----------
+		inputs
+			Input points of every task.
+		input_mapper
+			Maps `inputs` onto `points`. Defaults to `ExactInputMapper`.
+
+		Returns
+		-------
+		Grid with the same points, carrying `inputs`' mappings.
+		"""
+		return Grid(
+			points=self.points,
+			output_ids=self.output_ids,
+			mappings=input_mapper(self.points, inputs),
+			n_outputs=self.n_outputs,
+		)
 
 
 @jaxtyped(typechecker=typechecker)

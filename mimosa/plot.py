@@ -30,7 +30,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 from jax import Array
 
-from mimosa.data_structures import Dataset, Dimensions, Grid, Hyperposterior, Hyperprior, Mixture, MultivariateNormal
+from mimosa.data_structures import (
+	Dataset,
+	Dimensions,
+	Grid,
+	Hyperposterior,
+	Hyperprior,
+	IdArg,
+	Mixture,
+	MultivariateNormal,
+	_resolve_ids,
+)
 
 __all__ = [
 	"IdArg",
@@ -46,24 +56,8 @@ __all__ = [
 _STYLE = "seaborn-v0_8-whitegrid"
 
 
-IdArg = int | Literal["all"]
-
 _DEFAULT_SCATTER_KWARGS = {"s": 15, "alpha": 0.7}
 _DEFAULT_LINE_KWARGS = {"linewidth": 1.0, "alpha": 0.7}
-
-
-def _resolve_ids(id_arg: IdArg, size: int) -> list[int]:
-	"""
-	Resolve a t_id/k_id/c_id/o_id argument into a list of indices: every index if "all",
-	or a single-element list if an int.
-	"""
-	if id_arg == "all":
-		return list(range(size))
-	if isinstance(id_arg, int):
-		if not (0 <= id_arg < size):
-			raise ValueError(f"Index {id_arg} out of range for size {size}.")
-		return [id_arg]
-	raise TypeError(f"Expected 'all' or int, got {id_arg!r}.")
 
 
 def _get_fig_ax(fig, ax, nrows: int, ncols: int, figsize: tuple[float, float] | None = None):
@@ -132,7 +126,7 @@ def _grid_x(grid: Grid, dims: Dimensions, o_id: int):
 	supported). Every output shares the whole of `grid.points` if `grid.output_ids` is None
 	(isotopic_output_in_grid); otherwise `output_ids` says which rows belong to which output.
 
-	Note that `grid` need not be the one the data was generated on: a `mimosa.grid.GridBuilder`
+	Note that `grid` need not be the one the data was generated on: a grid from `mimosa.grid`
 	builds its points from the data, so their count is `len(grid.points)`, not `dims.G`.
 	"""
 	rows = slice(None) if grid.output_ids is None else np.flatnonzero(np.asarray(grid.output_ids) == o_id)
@@ -148,7 +142,7 @@ def _grid_block(grid: Grid, dims: Dimensions, o_id: int, length: int):
 	labels them.
 
 	The block size is read off `length` rather than `dims.G`, so it also holds for a grid built from
-	the data by a `mimosa.grid.GridBuilder`.
+	the data by `mimosa.grid`.
 	"""
 	if grid.output_ids is None:
 		block = length // dims.O
@@ -305,7 +299,16 @@ def plot_task(
 
 	for col, c in enumerate(c_ids):
 		plot_channel(
-			dataset, dims, t_id, c, o_id=o_id, fig=fig, ax=ax[:, col : col + 1], color=color, kind=kind, **scatter_kwargs
+			dataset,
+			dims,
+			t_id,
+			c,
+			o_id=o_id,
+			fig=fig,
+			ax=ax[:, col : col + 1],
+			color=color,
+			kind=kind,
+			**scatter_kwargs,
 		)
 
 	return fig, ax

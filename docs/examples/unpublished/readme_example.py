@@ -29,7 +29,7 @@ dataset, grid, hyperprior, mixture, parameters, cluster_means, tasks = generate_
 	subkey, dims, init_params, config, input_range=[(-2.5, 2.5)])
 
 # Fit a model on the generated dataset, starting from the same parameters
-fit_grid = UnionGrid()(dataset.inputs)
+fit_grid = UnionGrid(dataset.inputs)
 model = BasicModel(jr.PRNGKey(1), n_clusters=dims.K)
 hyperposterior, fitted_mixture, fitted_params = model.fit(dataset, fit_grid, parameters, n_iter=50)
 

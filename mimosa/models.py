@@ -56,7 +56,7 @@ class BasicModel(AbstractModel):
 	Default model pipeline: k-means mixture initialisation, LBFGS-optimised cluster and task
 	hyperparameters.
 
-	Unlike grid construction (see `mimosa.grid.GridBuilder`), every step here is jit-compatible, so
+	Unlike grid construction (see `mimosa.grid`), every step here is jit-compatible, so
 	`fit`/`predict` are jitted end-to-end. The `Grid` itself is a required argument rather than an
 	attribute: building it (e.g. via `mimosa.grid.UnionGrid`) isn't always jit-compatible, so it must
 	be computed by the caller outside of `fit`/`predict`.

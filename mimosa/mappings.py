@@ -2,8 +2,8 @@
 Map the input points of every task onto the points of a grid.
 
 A mapping is the bridge between a `Dataset`'s inputs and a `Grid`: it gives, for each task input
-point, the index of the grid point that represents it. `mimosa.grid`'s builders delegate to an
-`InputMapper` to produce the `mappings` field of the `Grid` they return.
+point, the index of the grid point that represents it. `mimosa.grid`'s grids delegate to an
+`InputMapper` to produce their own `mappings`.
 
 Padding
 -------
@@ -36,8 +36,7 @@ class InputMapper(eqx.Module):
 		Parameters
 		----------
 		points
-			Grid points to map `inputs` onto, of shape `(G, I)`, as returned by
-			`mimosa.grid.GridBuilder.compute_points`.
+			Grid points to map `inputs` onto, of shape `(G, I)`.
 		inputs
 			Input points of every task, of shape `(#T, N, I)`. A padding point (NaN on every input
 			dimension) maps to `PAD_INDEX`.
@@ -53,7 +52,7 @@ class ExactInputMapper(InputMapper):
 	"""
 	Map every input point to the grid point it is exactly equal to, by binary search.
 
-	Default mapper of `mimosa.grid`'s builders. Suited to a grid that contains the tasks' own input
+	Default mapper of `mimosa.grid`'s grids. Suited to a grid that contains the tasks' own input
 	points, such as one built by `mimosa.grid.UnionGrid`: a point that is not bit-for-bit equal to a
 	grid point maps to `PAD_INDEX`, and is thus ignored during training/prediction.
 

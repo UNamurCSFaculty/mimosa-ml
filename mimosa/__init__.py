@@ -10,7 +10,7 @@ never from the package root.
 `__all__` below is the supported flat API -- everything needed to build, fit, predict, plot,
 save/load and simulate. Names used only to *extend* the library (abstract bases, free numerical
 functions, internal block containers) stay in their submodule and are reached through it, e.g.
-`mimosa.linalg.cho_factor`, `mimosa.prediction.predict`, `mimosa.grid.GridBuilder`. Each submodule
+`mimosa.linalg.cho_factor`, `mimosa.prediction.predict`, `mimosa.mappings.InputMapper`. Each submodule
 declares its own `__all__`; anything absent from it is private.
 """
 
@@ -62,6 +62,7 @@ from mimosa.synthetic import (
 	build_gp_parameters,
 	sample_parameters_from_priors,
 	RandomDataRemover,
+	SubdomainRemover,
 )
 
 __all__ = [
@@ -124,6 +125,7 @@ __all__ = [
 	"build_gp_parameters",
 	"sample_parameters_from_priors",
 	"RandomDataRemover",
+	"SubdomainRemover",
 ]
 
 __version__ = importlib.metadata.version("mimosa-ml")

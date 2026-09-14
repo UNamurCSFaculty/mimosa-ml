@@ -22,10 +22,23 @@ before upgrading.
 * new `kind` argument in plot functions to plot task as dots or curves.
 * `mimosa.sampling.mixture_sampler` and `mimosa.sampling.exact_mixture_sampler`: draw from a mixture of
   multivariate normals, one i.i.d. sample per key or `n_samples` with exact cluster proportions.
+* `mimosa.synthetic.SubdomainRemover`: hold out a region of the input space, for every task or for a
+  single task/cluster/channel/output — `SubdomainRemover(bounds=((10., 25.),))(dataset, t_id=3)`.
 
 ### Changed
 
 * `sample_gp` takes a `MultivariateNormal` instead of separate `mean` and `cov` arguments.
+* Grids build themselves: `UnionGrid(dataset.inputs)` instead of `UnionGrid()(dataset.inputs)`, and
+  likewise `RegularGrid(inputs, bounds=..., n_points=...)`, `KMeansGrid(key, inputs, n_points=...)`
+  and `MultiOutputUnionGrid(dataset, config, n_outputs=...)`.
+
+### Removed
+
+* `mimosa.grid.GridBuilder` and `mimosa.grid.MultiOutputGridBuilder`. Use `Grid.remap(inputs)` in
+  place of `compute_mappings`, and a grid's `points` in place of `compute_points`.
+* Data removers take their PRNG key at construction, return `(kept, removed)` instead of one
+  `Dataset`, and no longer take a `grid`: `RandomDataRemover(key)(dataset, config)`. A subclass now
+  implements `removal_mask` instead of `__call__`.
 
 ---
 
