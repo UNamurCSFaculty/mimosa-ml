@@ -2,14 +2,26 @@ repos:
   - repo: https://github.com/mwouts/jupytext
     rev: v1.19.5
     hooks:
+      # The stock entry is `jupytext --pre-commit-mode`, which refuses to run whenever the paired
+      # file of a staged file is not itself staged -- the usual case, since one edits either the
+      # script or the notebook, not both. Every commit then failed once ("the git index is
+      # outdated"), and only succeeded on a second attempt, once the regenerated partner had been
+      # staged by hand. Syncing and staging the pair here does that second attempt for us.
+      # `--paired-paths` takes a single notebook, hence the loop.
       - id: jupytext
-        args: [--sync]
+        entry: >-
+          bash -c 'set -e; for f in "$@"; do jupytext --sync --quiet "$f";
+          git add -- "$f" $(jupytext --paired-paths "$f"); done' --
+        args: []
         files: ^docs/examples/.*\.(py|ipynb)$
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.9.1
     hooks:
+      # Staged for the same reason as the sync above: a notebook that still carries outputs would
+      # otherwise be stripped in the working tree but fail the commit, forcing a second one.
       - id: nbstripout
+        entry: bash -c 'nbstripout "$@" && git add -- "$@"' --
         files: ^docs/examples/.*\.ipynb$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
