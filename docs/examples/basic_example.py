@@ -160,7 +160,7 @@ Note: the model doesn't know the "true" mixture, so sometimes the indices of clu
 
 # %% [markdown]
 """
-## Predicting
+## Predicting  
 
 Predictions are multimodal: the model returns one Gaussian process per cluster for each task. Here we
 simply keep the one of the task's **most probable cluster**.
