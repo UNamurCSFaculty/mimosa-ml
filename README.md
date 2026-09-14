@@ -135,7 +135,7 @@ prediction = predictions[t_id, k_id, c_id]
 
 key, sample_key = jr.split(key)
 sample_keys = jr.split(sample_key, 64)
-samples = vmap(lambda k: sample_gp(k, prediction.mean, prediction.covariance))(sample_keys)
+samples = vmap(lambda k: sample_gp(k, prediction))(sample_keys)
 
 fig, ax = plot_single_task_prediction(
 	dataset, fit_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, samples=samples)

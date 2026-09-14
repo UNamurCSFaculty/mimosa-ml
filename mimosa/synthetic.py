@@ -291,7 +291,8 @@ def build_task_kernel(task_kernel: AbstractKernel, dims: Dimensions, config: Mod
 		if config.isotopic_tasks:
 			task_kernel = BatchModule(task_kernel, batch_size=1, batch_in_axes=None, batch_over_inputs=False)
 		else:
-			task_kernel = BatchModule(task_kernel, batch_size=dims.T, batch_in_axes=None, batch_over_inputs=True)
+			# Set `batch_size` to None make the kernel able to work with any number of tasks
+			task_kernel = BatchModule(task_kernel, batch_size=None, batch_in_axes=None, batch_over_inputs=True)
 	else:
 		if config.isotopic_tasks:
 			task_kernel = BatchModule(task_kernel, batch_size=dims.T, batch_in_axes=0, batch_over_inputs=False)
@@ -549,13 +550,18 @@ def generate_data(
 	)
 
 	if config.shared_channel_hps:
-		sample_channels = vmap(lambda k, m, c: sample_gp(k, m[0], c[0], jitter=jitter), in_axes=(0, None, None))
+		sample_channels = vmap(
+			lambda k, m, c: sample_gp(k, MultivariateNormal(mean=m[0], covariance=c[0]), jitter=jitter),
+			in_axes=(0, None, None),
+		)
 		if config.shared_cluster_hps:
 			sample_clusters = vmap(lambda k, m, c: sample_channels(k, m[0], c[0]), in_axes=(0, None, None))
 		else:
 			sample_clusters = vmap(lambda k, m, c: sample_channels(k, m, c), in_axes=(0, 0, 0))
 	else:
-		sample_channels = vmap(lambda k, m, c: sample_gp(k, m, c, jitter=jitter), in_axes=(0, 0, 0))
+		sample_channels = vmap(
+			lambda k, m, c: sample_gp(k, MultivariateNormal(mean=m, covariance=c), jitter=jitter), in_axes=(0, 0, 0)
+		)
 		if config.shared_cluster_hps:
 			sample_clusters = vmap(lambda k, m, c: sample_channels(k, m[0], c[0]), in_axes=(0, None, None))
 		else:
@@ -606,18 +612,25 @@ def generate_data(
 			jnp.arange(len(task_covs)), jnp.argmax(mixture.responsibilities, axis=1)
 		]  # Shape (T, C, O*N, O*N) with T=1 if shared_task_hps and C=1 if shared_channel_hps
 	else:
-		task_covs = task_covs[:, 0, ...]  # Shape (T, C, O*N, O*N) with T=1 if shared_task_hps and C=1 if shared_channel_hps
+		task_covs = task_covs[
+			:, 0, ...
+		]  # Shape (T, C, O*N, O*N) with T=1 if shared_task_hps and C=1 if shared_channel_hps
 
 	tasks = MultivariateNormal(mean=task_means, covariance=task_covs)
 
 	if config.shared_channel_hps:
-		sample_channels = vmap(lambda k, m, c: sample_gp(k, m, c[0], jitter=jitter), in_axes=(0, 0, None))
+		sample_channels = vmap(
+			lambda k, m, c: sample_gp(k, MultivariateNormal(mean=m, covariance=c[0]), jitter=jitter),
+			in_axes=(0, 0, None),
+		)
 		if config.isotopic_tasks and config.shared_task_hps:
 			sample_tasks = vmap(lambda k, m, c: sample_channels(k, m, c[0]), in_axes=(0, 0, None))
 		else:
 			sample_tasks = vmap(lambda k, m, c: sample_channels(k, m, c), in_axes=(0, 0, 0))
 	else:
-		sample_channels = vmap(lambda k, m, c: sample_gp(k, m, c, jitter=jitter), in_axes=(0, 0, 0))
+		sample_channels = vmap(
+			lambda k, m, c: sample_gp(k, MultivariateNormal(mean=m, covariance=c), jitter=jitter), in_axes=(0, 0, 0)
+		)
 		if config.isotopic_tasks and config.shared_task_hps:
 			sample_tasks = vmap(lambda k, m, c: sample_channels(k, m, c[0]), in_axes=(0, 0, None))
 		else:

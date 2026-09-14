@@ -20,6 +20,12 @@ before upgrading.
 * `skip_parameter_build` on `mimosa.synthetic.generate_data`: use the given `Parameters` as-is,
   instead of rebuilding them with `build_parameters`.
 * new `kind` argument in plot functions to plot task as dots or curves.
+* `mimosa.sampling.mixture_sampler` and `mimosa.sampling.exact_mixture_sampler`: draw from a mixture of
+  multivariate normals, one i.i.d. sample per key or `n_samples` with exact cluster proportions.
+
+### Changed
+
+* `sample_gp` takes a `MultivariateNormal` instead of separate `mean` and `cov` arguments.
 
 ---
 

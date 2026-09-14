@@ -25,6 +25,7 @@ from matplotlib.patches import PathPatch
 from matplotlib.textpath import TextPath
 from matplotlib.transforms import Affine2D
 
+from mimosa.data_structures import MultivariateNormal
 from mimosa.sampling import sample_gp
 
 jax.config.update("jax_enable_x64", True)
@@ -79,7 +80,9 @@ def _condition(kernel, x: Array, anchors: Array, values: Array) -> tuple[Array, 
 
 def _draw(key: Array, mean: Array, cov: Array, n: int) -> np.ndarray:
 	"""`n` realisations of the process `(mean, cov)`. Shape `(n, len(mean))`."""
-	return np.asarray(vmap(lambda k: sample_gp(k, mean, cov, _JITTER))(jr.split(key, n)))
+	return np.asarray(
+		vmap(lambda k: sample_gp(k, MultivariateNormal(mean=mean, covariance=cov), _JITTER))(jr.split(key, n))
+	)
 
 
 def _petals(

@@ -54,7 +54,7 @@ from mimosa.plot import (
 	plot_single_task_prediction,
 )
 from mimosa.prediction import FunctionPredictor, ObservationPredictor, GPPredictor
-from mimosa.sampling import sample_gp
+from mimosa.sampling import sample_gp, mixture_sampler, exact_mixture_sampler
 from mimosa.synthetic import (
 	generate_data,
 	known_noise_kernel,
@@ -116,6 +116,8 @@ __all__ = [
 	"plot_single_task_prediction",
 	# sampling and simulation
 	"sample_gp",
+	"mixture_sampler",
+	"exact_mixture_sampler",
 	"generate_data",
 	"known_noise_kernel",
 	"build_parameters",

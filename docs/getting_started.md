@@ -36,7 +36,7 @@ model = BasicModel(jr.PRNGKey(1), n_clusters=dims.K)
 # --- Fitting --- #
 hyperposterior, mixture, fitted_params = model.fit(dataset, grid, init_params, n_iter=50)
 
-# --- Predictins --- #
+# --- Predicting --- #
 predictions = model.predict(dataset, grid, mixture, fitted_params)
 ```
 
