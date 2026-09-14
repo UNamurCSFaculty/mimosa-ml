@@ -5,7 +5,7 @@ if importlib.util.find_spec("mimosa") is None:
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
 # On Colab the notebook runs from /content, so fetch the datasets the example reads.
 from urllib.request import urlretrieve
-DATA_URL = "https://raw.githubusercontent.com/SimLej18/mimosa-ml/main/docs/examples/data"
+DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/data"
 Path("data").mkdir(exist_ok=True)
 for csv_name in ("car_trajectories_aligned.csv", "car_trajectories_2c_2o.csv"):
     if not Path("data", csv_name).exists():

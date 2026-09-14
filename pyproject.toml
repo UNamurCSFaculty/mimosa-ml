@@ -34,7 +34,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/SimLej18/mimosa-ml"
+Homepage = "https://github.com/UNamurCSFaculty/mimosa-ml"
 
 [dependency-groups]
 dev = [

@@ -62,7 +62,7 @@ html_static_path = ["_static"]
 html_css_files = ["custom.css"]  # only to keep the logo legible in dark mode; see the file
 
 html_theme_options = {
-    "repository_url": "https://github.com/SimLej18/mimosa-ml",
+    "repository_url": "https://github.com/UNamurCSFaculty/mimosa-ml",
     "repository_branch": "main",
     "path_to_docs": "docs",
     "use_repository_button": True,

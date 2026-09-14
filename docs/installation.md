@@ -15,7 +15,7 @@ The PyPI distribution is `mimosa-ml`; the package you import is `mimosa`.
 ## What gets installed
 
 Mimosa pulls in its own stack: `jax`, `equinox` and `optimistix` for the computation and
-optimisation, [`kernax-ml`](https://github.com/SimLej18/kernax-ml) for every kernel and mean
+optimisation, [`kernax-ml`](https://github.com/UNamurCSFaculty/kernax-ml) for every kernel and mean
 function, plus `polars`, `numpy` and `matplotlib` for I/O and plotting.
 
 ## Importing

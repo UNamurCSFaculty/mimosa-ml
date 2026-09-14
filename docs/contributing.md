@@ -8,7 +8,7 @@ still moving quickly, and merging external changes against it would cost more th
 That said, we are interested in hearing from you:
 
 * **Bug reports** are welcome — open an issue on
-  [GitHub](https://github.com/SimLej18/mimosa-ml/issues). A minimal script, the `Dimensions` and
+  [GitHub](https://github.com/UNamurCSFaculty/mimosa-ml/issues). A minimal script, the `Dimensions` and
   `ModelConfig` you used, and the versions of `mimosa-ml` and `jax` are usually enough to reproduce.
 * **Examples from your field.** If your research provides an interesting application of Mimosa,
   consider publishing a toy example in this documentation. Tutorials are plain scripts in
@@ -24,7 +24,7 @@ Mimosa is primarily developed by the *Magma Task Force*:
   main author of the original [MagmaClustR](https://arthurleroy.github.io/MagmaClustR/) and
   coordinator of the Task Force.
 * [Simon Lejoly](https://researchportal.unamur.be/fr/persons/slejoly/), PhD student at UNamur (BE),
-  main developer of the package and author of [Kernax](https://github.com/SimLej18/kernax-ml).
+  main developer of the package and author of [Kernax](https://github.com/UNamurCSFaculty/kernax-ml).
 * Alexia Grenouillat, PhD student at INSA Toulouse (FR), working on multi-output correlation
   discovery.
 * Térence Viellard, PhD student at INRAe (FR), working on sparse approximations and scalability.

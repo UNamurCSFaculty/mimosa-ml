@@ -53,7 +53,7 @@ a fit across devices, see {doc}`examples/distributed_training`.
 ## Can I use my own kernels?
 
 Yes. Kernels and mean functions come from
-[Kernax](https://github.com/SimLej18/kernax-ml) and compose with `*` and `+`, so any kernax kernel
+[Kernax](https://github.com/UNamurCSFaculty/kernax-ml) and compose with `*` and `+`, so any kernax kernel
 (Matérn, periodic, linear, …) can be dropped into `Parameters`. Beyond that, Mimosa is layered: the
 `Model` API covers the general case, and you can assemble your own training loop from the same
 components — see {doc}`examples/custom_training_loop`.

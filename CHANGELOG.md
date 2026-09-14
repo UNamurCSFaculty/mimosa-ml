@@ -150,7 +150,7 @@ the API may change in any release.
 
 The multi-output release. MIMOSA now learns **correlations between outputs** of a vector-valued
 function, on top of the existing multi-task/multi-cluster machinery — using the multi-output kernels
-of [Kernax](https://github.com/SimLej18/kernax-ml) (`ICMKernel`, `LCMKernel`, `ConvolutionKernel`,
+of [Kernax](https://github.com/UNamurCSFaculty/kernax-ml) (`ICMKernel`, `LCMKernel`, `ConvolutionKernel`,
 `BlockMean`, `BlockDiagKernel`) throughout the full pipeline: data generation, grid construction,
 fitting, hyperposterior, prediction, plotting and CSV I/O.
 
@@ -388,8 +388,8 @@ tasks as a mixture of Magma GPs, multi-dimensional inputs and (uncorrelated) out
 predictions with uncertainty quantification, Kernax kernel/mean integration, and full JAX/Equinox
 compatibility for `vmap`/`grad`/`jit`.
 
-[v0.4.0-alpha]: https://github.com/SimLej18/mimosa-ml/releases/tag/v0.4.0-alpha
-[v0.3.0-alpha]: https://github.com/SimLej18/mimosa-ml/releases/tag/v0.3.0-alpha
-[v0.2.0]: https://github.com/SimLej18/mimosa-ml/releases/tag/v0.2.0
-[v0.1.1-alpha]: https://github.com/SimLej18/mimosa-ml/releases/tag/v0.1.1-alpha
-[v0.1.0-alpha]: https://github.com/SimLej18/mimosa-ml/releases/tag/v0.1.0-alpha
+[v0.4.0-alpha]: https://github.com/UNamurCSFaculty/mimosa-ml/releases/tag/v0.4.0-alpha
+[v0.3.0-alpha]: https://github.com/UNamurCSFaculty/mimosa-ml/releases/tag/v0.3.0-alpha
+[v0.2.0]: https://github.com/UNamurCSFaculty/mimosa-ml/releases/tag/v0.2.0
+[v0.1.1-alpha]: https://github.com/UNamurCSFaculty/mimosa-ml/releases/tag/v0.1.1-alpha
+[v0.1.0-alpha]: https://github.com/UNamurCSFaculty/mimosa-ml/releases/tag/v0.1.0-alpha

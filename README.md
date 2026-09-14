@@ -64,7 +64,7 @@ We encourage using a more recent version to be compatible with latest releases o
 We basically took Gaussian processes, and combined them with a ton of ✨*fancy components*✨
 * ➡️ Multi-task learning based on [Magma](https://jmlr.org/papers/v24/20-1321.html)
 * ➡️ Clustering as a mixture of Magma GPs
-* ➡️ Multi-dimensional inputs thanks to efficient kernels from [Kernax](https://github.com/SimLej18/kernax-ml)
+* ➡️ Multi-dimensional inputs thanks to efficient kernels from [Kernax](https://github.com/UNamurCSFaculty/kernax-ml)
 * ➡️ Multi-dimensional uncorrelated channels by simply broadcasting the algorithm to another dimension
 * ➡️ Multi-output correlation discovery by learning a [multi-output kernel](https://arxiv.org/pdf/1106.6251)
 
@@ -76,7 +76,7 @@ We use **JAX** as a back-end for every computation!
 and XLA support allows us to train and predict on GPUs and TPUs for scalability.
 
 A GP library is nothing without a fast and modular **Kernel library**. 
-MIMOSA relies on the efficiency-focused [Kernax package](https://github.com/SimLej18/kernax-ml) for every kernel use 
+MIMOSA relies on the efficiency-focused [Kernax package](https://github.com/UNamurCSFaculty/kernax-ml) for every kernel use 
 throughout the algorithms.
 
 ---
@@ -215,7 +215,7 @@ By default, Mimosa's jitter is fixed at 1e-8 for every component of the framewor
 MIMOSA is primarily developed by the *Magma Task Force*, composed of:
 
 * [Arthur Leroy](https://arthur-leroy.netlify.app/), researcher at Paris Saclay and INRAe (FR), main author of the original tool [MagmaClustR](https://arthurleroy.github.io/MagmaClustR/) and coordinator of the Task Force.
-* [Simon Lejoly](https://researchportal.unamur.be/fr/persons/slejoly/), PhD student at UNamur (BE), main developer of the package and author of the [Kernax package](https://github.com/SimLej18/kernax-ml)
+* [Simon Lejoly](https://researchportal.unamur.be/fr/persons/slejoly/), PhD student at UNamur (BE), main developer of the package and author of the [Kernax package](https://github.com/UNamurCSFaculty/kernax-ml)
 * Alexia Grenouillat, PhD student at INSA Toulouse (FR), working on multi-output correlation discovery.
 * Térence Viellard, PhD student at INRAe (FR), working on sparse approximations and scalability.
 

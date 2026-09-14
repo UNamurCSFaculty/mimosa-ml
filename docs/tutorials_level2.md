@@ -9,6 +9,7 @@ channel dimensions, outliers, and non-Gaussian observations.
 Clustering: predicting turnip prices <examples/turnip_example>
 Multi-output learning <examples/multi_output_example>
 Multi-channel learning <examples/multi_channel_example>
+Multi-channel learning (alternative) <examples/multi_channel_example_alt>
 Outlier detection <examples/outlier_detection_example>
 Binary sequence learning <examples/binary_classif_example>
 ```
