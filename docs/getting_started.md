@@ -48,7 +48,7 @@ predictions = model.predict(dataset, grid, mixture, fitted_params)
 
 `ModelConfig`
 : Which hyperparameters are shared across tasks, clusters and channels, and whether tasks share
-  input locations. See {doc}`examples/configurations`.
+  input locations. See {doc}`examples/level1/configurations`.
 
 `Parameters`
 : The four model components: `cluster_mean` and `cluster_kernel` describe the mean-processes each
@@ -73,10 +73,10 @@ from mimosa import load_csv
 dataset = load_csv("my_data.csv")
 ```
 
-For information on the csv format to follow, look at {doc}`examples/run_your_data`.
+For information on the csv format to follow, look at {doc}`examples/level1/run_your_data`.
 
 The full walkthrough — missing points, clustering, plotting and sampling from a prediction — is in
-{doc}`examples/basic_example`.
+{doc}`examples/level1/basic_example`.
 
 ```{tip}
 Read {doc}`sharp_bits` before your first real fit. Most early surprises with Mimosa are either

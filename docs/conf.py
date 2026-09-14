@@ -70,7 +70,7 @@ html_theme_options = {
 }
 
 # `basic_mo_example` is kept as a runnable script but is not part of the documented tour.
-exclude_patterns = ["_build", "**.ipynb_checkpoints", "examples/basic_mo_example.ipynb"]
+exclude_patterns = ["_build", "**.ipynb_checkpoints", "examples/unpublished/*"]
 
 nb_execution_excludepatterns = [
 ]

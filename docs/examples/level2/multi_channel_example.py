@@ -6,6 +6,11 @@ if importlib.util.find_spec("mimosa") is None:
 # On Colab the notebook runs from /content, so fetch the dataset the example reads.
 from urllib.request import urlretrieve
 DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/data"
+# The docs build runs each notebook from its own level folder, while the data folder is shared at
+# docs/examples/data. On Colab the notebook runs from /content, where neither exists.
+import os
+if Path("../data").is_dir():
+    os.chdir("..")
 Path("data").mkdir(exist_ok=True)
 if not Path("data", "car_trajectories.csv").exists():
     urlretrieve(f"{DATA_URL}/car_trajectories.csv", Path("data", "car_trajectories.csv"))

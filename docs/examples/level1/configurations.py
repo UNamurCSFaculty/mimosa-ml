@@ -1,7 +1,17 @@
 # %% tags=["remove-cell"]
 import importlib.util, subprocess, sys
+from pathlib import Path
 if importlib.util.find_spec("mimosa") is None:
-	subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
+	# When running in Colab, you can select a GPU for execution and un-comment the next line
+	# subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
+# On Colab the notebook runs from /content, where the example's data folder does not exist.
+# The docs build runs each notebook from its own level folder, while the data folder is shared at
+# docs/examples/data. On Colab the notebook runs from /content, where neither exists.
+import os
+if Path("../data").is_dir():
+    os.chdir("..")
+Path("data").mkdir(exist_ok=True)
 
 # %% [markdown]
 r"""
@@ -28,6 +38,7 @@ from mimosa.data_structures import validate_model_config
 
 key = jr.PRNGKey(0)
 plt.rcParams["figure.dpi"] = 150
+jax.devices()
 
 # %% [markdown]
 r"""

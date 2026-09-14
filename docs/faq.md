@@ -32,7 +32,7 @@ Usually, fitting for a few values of `K` and comparing the results is enough. To
 often lead to some clusters getting empty or containing only one outlier.
 
 You can also perform model selection using metrics specific to the task you are trying to solve.
-An example of this is given in {doc}`examples/turnip_example`.
+An example of this is given in {doc}`examples/level2/turnip_example`.
 
 ## Which `ModelConfig` flags should I use?
 
@@ -40,7 +40,7 @@ The defaults share hyperparameters across tasks, clusters and channels, which is
 constrained and most stable setting. Relax a flag when you believe that dimension genuinely differs
 — per-task noise, say, or per-cluster kernels. The most reliable way to build intuition is to
 generate synthetic data with `generate_data` under different configurations until it resembles your
-real dataset. Each flag is described in {doc}`examples/configurations`.
+real dataset. Each flag is described in {doc}`examples/level1/configurations`.
 
 It is usually ill-advised to have distinct hyperparameters in all dimensions, as a single
 unstable task can take down the whole training by itself.
@@ -48,7 +48,7 @@ unstable task can take down the whole training by itself.
 ## Can I run on a GPU or TPU?
 
 Yes — install the matching jax build and mimosa follows. Nothing in the API changes. For splitting
-a fit across devices, see {doc}`examples/distributed_training`.
+a fit across devices, see {doc}`examples/level3/distributed_training`.
 
 ## Can I use my own kernels?
 
@@ -56,21 +56,21 @@ Yes. Kernels and mean functions come from
 [Kernax](https://github.com/UNamurCSFaculty/kernax-ml) and compose with `*` and `+`, so any kernax kernel
 (Matérn, periodic, linear, …) can be dropped into `Parameters`. Beyond that, Mimosa is layered: the
 `Model` API covers the general case, and you can assemble your own training loop from the same
-components — see {doc}`examples/custom_training_loop`.
+components — see {doc}`examples/level3/custom_training_loop`.
 
 ## Can I fit non-Gaussian data?
 
 Experimentally. Binary, count and duration observations can be Laplace-matched into Gaussian
 pseudo-observations with the `*LaplaceApproximator` classes, leaving the rest of the pipeline
-unchanged. See {doc}`examples/binary_classif_example`.
+unchanged. See {doc}`examples/level2/binary_classif_example`.
 
 ## How large a dataset can Mimosa handle?
 
 A GP costs cubically in the number of points it factorises, so the grid size `G` is what usually
 binds, not the number of tasks. Tasks are batched with `vmap` and scale well; grids do not. When a
 full grid becomes too large, use a coarser one (`RegularGrid`, `KMeansGrid`) or move to
-{doc}`examples/sparse_approximations`. Training on minibatches of tasks is covered in
-{doc}`examples/stochastic_learning`.
+{doc}`examples/level3/sparse_approximations`. Training on minibatches of tasks is covered in
+{doc}`examples/level3/stochastic_learning`.
 
 ## Is the API stable?
 

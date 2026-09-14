@@ -8,7 +8,7 @@ on:
       - "v*"
 
 env:
-  # The smoke tests run docs/examples/basic_example.py, which calls plt.show().
+  # The smoke tests run docs/examples/level1/basic_example.py, which calls plt.show().
   MPLBACKEND: Agg
 
 jobs:
@@ -35,15 +35,15 @@ jobs:
       # Run against the built distributions rather than the checkout, on both ends of the supported
       # Python range -- 3.10 resolves jax 0.6.2, 3.14 resolves jax 0.11.1.
       - name: Smoke test (wheel, Python 3.10)
-        run: uv run --isolated --no-project --python 3.10 --with dist/*.whl docs/examples/basic_example.py
+        run: uv run --isolated --no-project --python 3.10 --with dist/*.whl docs/examples/level1/basic_example.py
 
       - name: Smoke test (wheel, Python 3.14)
-        run: uv run --isolated --no-project --python 3.14 --with dist/*.whl docs/examples/basic_example.py
+        run: uv run --isolated --no-project --python 3.14 --with dist/*.whl docs/examples/level1/basic_example.py
 
       # The sdist and the wheel install the same code, so this checks the sdist builds at all,
       # not the Python range again.
       - name: Smoke test (source distribution, Python 3.14)
-        run: uv run --isolated --no-project --python 3.14 --with dist/*.tar.gz docs/examples/basic_example.py
+        run: uv run --isolated --no-project --python 3.14 --with dist/*.tar.gz docs/examples/level1/basic_example.py
 
       - name: Upload distributions as artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

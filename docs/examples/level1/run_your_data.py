@@ -4,13 +4,18 @@ from pathlib import Path
 if importlib.util.find_spec("mimosa") is None:
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
 # On Colab the notebook runs from /content, where the example's data folder does not exist.
+# The docs build runs each notebook from its own level folder, while the data folder is shared at
+# docs/examples/data. On Colab the notebook runs from /content, where neither exists.
+import os
+if Path("../data").is_dir():
+    os.chdir("..")
 Path("data").mkdir(exist_ok=True)
 
 # %% [markdown]
 r"""
 # Run your own data
 
-A customisable version of {doc}`basic_example`: same pipeline, but reading a CSV instead of
+A customisable version of {doc}`/examples/level1/basic_example`: same pipeline, but reading a CSV instead of
 generating data. Every cell marked **TODO** is one you are expected to edit.
 
 Written using jupytext's py:percent format. This script can be run cell-by-cell or as a usual Python
@@ -101,7 +106,7 @@ print(f"inputs {dataset.inputs.shape}, outputs {dataset.outputs.shape}")
 `Dimensions` describes the data; `T`, `N`, `C` and `I` are read off the loaded arrays, the rest is
 yours to choose.
 
-* `K` — how many clusters to look for. Start at 2-3; see {doc}`turnip_example` for picking it
+* `K` — how many clusters to look for. Start at 2-3; see {doc}`/examples/level2/turnip_example` for picking it
   empirically.
 * `O` — number of correlated outputs. 1 unless your file has `Output2_*` columns.
 * `G` — size of the training grid. With `UnionGrid` below it is the number of distinct input
@@ -134,7 +139,7 @@ plt.show()
 ## Configuring the model
 
 `ModelConfig` says which hyperparameters are shared. Sharing everything is the cheapest and most
-stable starting point; loosen one flag at a time. See {doc}`configurations` for what each one costs.
+stable starting point; loosen one flag at a time. See {doc}`/examples/level1/configurations` for what each one costs.
 """
 
 # %%
@@ -219,8 +224,8 @@ plt.show()
 """
 ## Where to go next
 
-* prediction outside the observed locations → end of {doc}`basic_example`
-* fit slow, or out of memory → {doc}`sparse_approximations`, {doc}`stochastic_learning`
-* NaNs or a diverging loss → {doc}`../sharp_bits`
-* several correlated outputs (`Output2_*` columns) → {doc}`multi_output_example`
+* prediction outside the observed locations → end of {doc}`/examples/level1/basic_example`
+* fit slow, or out of memory → {doc}`/examples/level3/sparse_approximations`, {doc}`/examples/level3/stochastic_learning`
+* NaNs or a diverging loss → {doc}`/sharp_bits`
+* several correlated outputs (`Output2_*` columns) → {doc}`/examples/level2/multi_output_example`
 """

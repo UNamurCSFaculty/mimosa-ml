@@ -18,7 +18,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
 ]
 # Floors are the versions resolved on the oldest supported interpreter (3.10), which is the
-# configuration `docs/examples/basic_example.py` is smoke-tested against in CI. jax 0.6.2 is the
+# configuration `docs/examples/level1/basic_example.py` is smoke-tested against in CI. jax 0.6.2 is the
 # last release supporting 3.10, so it sets the floor for the whole jax stack.
 dependencies = [
     "jax>=0.6.2",

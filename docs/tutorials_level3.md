@@ -6,8 +6,8 @@ larger datasets and more hardware.
 ```{toctree}
 :maxdepth: 1
 
-Custom training loops <examples/custom_training_loop>
-Stochastic learning <examples/stochastic_learning>
-Distributed training <examples/distributed_training>
-Sparse approximations <examples/sparse_approximations>
+Custom training loops <examples/level3/custom_training_loop>
+Stochastic learning <examples/level3/stochastic_learning>
+Distributed training <examples/level3/distributed_training>
+Sparse approximations <examples/level3/sparse_approximations>
 ```

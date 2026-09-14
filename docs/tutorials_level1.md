@@ -6,8 +6,8 @@ that shape a model, and how to get your own data in.
 ```{toctree}
 :maxdepth: 1
 
-Basic example <examples/basic_example>
-Concepts behind Mimosa <examples/concepts_behind_mimosa>
-Configurations <examples/configurations>
-Run your own data <examples/run_your_data>
+Basic example <examples/level1/basic_example>
+Concepts behind Mimosa <examples/level1/concepts_behind_mimosa>
+Configurations <examples/level1/configurations>
+Run your own data <examples/level1/run_your_data>
 ```

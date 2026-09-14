@@ -1,11 +1,18 @@
 # %% tags=["remove-cell"]
 import importlib.util, subprocess, sys
 from pathlib import Path
+from urllib.request import urlretrieve
 if importlib.util.find_spec("mimosa") is None:
+	# When running in Colab, you can select a GPU for execution and un-comment the next line
+	# subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
 # On Colab the notebook runs from /content, so fetch the datasets the example reads.
-from urllib.request import urlretrieve
 DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/data"
+# The docs build runs each notebook from its own level folder, while the data folder is shared at
+# docs/examples/data. On Colab the notebook runs from /content, where neither exists.
+import os
+if Path("../data").is_dir():
+    os.chdir("..")
 Path("data").mkdir(exist_ok=True)
 for csv_name in ("car_trajectories_aligned.csv", "car_trajectories_2c_2o.csv"):
     if not Path("data", csv_name).exists():
@@ -17,7 +24,7 @@ r"""
 This notebook introduces the core components of the Mimosa framework and illustrates them through concrete examples.
 
 Use the "launch" button to run it interactively in Colab or clone the repository and
-run the `examples/basic_example.py` script!
+run the `examples/level1/basic_example.py` script!
 
 ---
 
@@ -32,7 +39,7 @@ The mindmap below outlines the architectural building blocks of the framework.
 
 # %% [markdown]
 r"""
-![The Mimosa framework](../images/Mimosa_Framework.svg)
+![The Mimosa framework](../../images/Mimosa_Framework.svg)
 """
 
 # %% [markdown]
@@ -58,7 +65,9 @@ from mimosa import Dimensions, KMeansMixtureInitialiser, load_csv, plot_dataset
 
 key = jr.PRNGKey(2026)
 plt.rcParams["animation.html"] = "jshtml"  # lets an animation render itself, with no encoding dance
+jax.devices()
 
+# %%
 dataset = load_csv("data/car_trajectories_aligned.csv")
 N = dataset.inputs.shape[1]
 dims = Dimensions(T=dataset.outputs.shape[0], K=6, I=1, C=2, O=1, N=N, G=N)
@@ -166,7 +175,7 @@ The relationships between the different components of the Mimosa framework are d
 
 # %% [markdown]
 r"""
-![Graphical model of MOMTClust](../images/Graphical_model_MOMTClust.png)
+![Graphical model of MOMTClust](../../images/Graphical_model_MOMTClust.png)
 """
 
 # %% [markdown]

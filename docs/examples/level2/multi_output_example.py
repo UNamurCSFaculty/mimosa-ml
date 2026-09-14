@@ -1,3 +1,16 @@
+# %%
+import os
+from pathlib import Path
+from urllib.request import urlretrieve
+# The docs build runs each notebook from its own level folder, while the data folder is shared at
+# docs/examples/data. On Colab the notebook runs from /content, where neither exists.
+DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/data"
+if Path("../data").is_dir():
+    os.chdir("..")
+Path("data").mkdir(exist_ok=True)
+if not Path("data", "electricity_tasks_MIMOSA.csv").exists():
+    urlretrieve(f"{DATA_URL}/electricity_tasks_MIMOSA.csv", Path("data", "electricity_tasks_MIMOSA.csv"))
+
 # %% [markdown]
 r"""
 # **Predicting Energy Consumption across Multiple Clients and Temporal Windows**

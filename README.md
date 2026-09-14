@@ -156,7 +156,7 @@ wrapped = approximator.wrap(dataset)      # Gaussian means + per-point known noi
 probabilities = approximator.unwrap(samples)  # predictions back to observation space
 ```
 
-See `docs/examples/binary_classif_example.py` for the full pipeline. Experimental.
+See `docs/examples/level2/binary_classif_example.py` for the full pipeline. Experimental.
 
 MIMOSA is designed to have multiple layers of customisation. The "Model" API covers the most general use case of the
 algorithm, but you should consider building your own training loops and combining/developing your own sub-modules to 
