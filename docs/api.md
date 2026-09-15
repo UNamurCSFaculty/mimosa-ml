@@ -6,6 +6,16 @@ Mimosa's root module is a façade: it re-exports the supported flat API and defi
 Everything below is grouped by the submodule it actually lives in. Names absent from a submodule's
 `__all__` are private and are not documented here.
 
+## Pipelines
+
+A convenience layer over the flat API rather than part of it, so it is *not* re-exported by the root
+module: import it explicitly, `from mimosa.pipelines import TrainTestPipeline`.
+
+```{eval-rst}
+.. automodule:: mimosa.pipelines
+   :members:
+```
+
 ## Data structures
 
 ```{eval-rst}
@@ -79,6 +89,13 @@ Everything below is grouped by the submodule it actually lives in. Names absent 
 
 ```{eval-rst}
 .. automodule:: mimosa.plot
+   :members:
+```
+
+## Utilities
+
+```{eval-rst}
+.. automodule:: mimosa.utils
    :members:
 ```
 

@@ -12,7 +12,7 @@ import optimistix as optx
 from jax_tqdm import loop_tqdm
 
 from mimosa.hyperpost import Hyperpost
-from mimosa.nll import ClusterNLL, TaskNLL
+from mimosa.nll import ClusterNLL, TaskNLL, elbo
 from mimosa.optimisers import ClusterOptimiser, TaskOptimiser, optimise_gp
 from mimosa.mixture import KMeansMixtureInitialiser, MixtureInitialiser, MixtureUpdater
 from mimosa.prediction import FunctionPredictor, GPPredictor, Predictor
@@ -28,7 +28,7 @@ from mimosa.data_structures import (
 )
 from mimosa.constants import DEFAULT_JITTER
 
-__all__ = ["AbstractModel", "BasicModel", "GPModel"]
+__all__ = ["AbstractModel", "BasicModel", "EarlyStoppingModel", "GPModel"]
 
 
 class AbstractModel(eqx.Module):
@@ -101,6 +101,8 @@ class BasicModel(AbstractModel):
 		jitter: Array = DEFAULT_JITTER,
 		n_outputs: int = 1,
 		predictor: Predictor = FunctionPredictor(),
+		mixture_initialiser: MixtureInitialiser | None = None,
+		mixture_updater: MixtureUpdater = MixtureUpdater(),
 	):
 		"""
 		Parameters
@@ -119,9 +121,20 @@ class BasicModel(AbstractModel):
 		predictor
 			Whether `predict` returns the latent function (`FunctionPredictor`, the default) or an
 			observation of it, including observation noise (`ObservationPredictor`).
+		mixture_initialiser
+			Initialises the tasks' responsibilities. Defaults to
+			`KMeansMixtureInitialiser(prng_key, n_clusters, n_outputs)`; pass one explicitly to tune
+			its restarts or stiffness, or to cluster by something other than k-means. `prng_key`,
+			`n_clusters` and `n_outputs` are then unused.
+		mixture_updater
+			Updates the responsibilities at every E-step.
 		"""
-		self.mixture_initialiser = KMeansMixtureInitialiser(prng_key, n_clusters, n_outputs)
-		self.mixture_updater = MixtureUpdater()
+		self.mixture_initialiser = (
+			KMeansMixtureInitialiser(prng_key, n_clusters, n_outputs)
+			if mixture_initialiser is None
+			else mixture_initialiser
+		)
+		self.mixture_updater = mixture_updater
 		self.hyperpost = Hyperpost()
 		self.cluster_nll = ClusterNLL()
 		self.task_nll = TaskNLL()
@@ -221,54 +234,96 @@ class BasicModel(AbstractModel):
 
 		@loop_tqdm(n_iter, desc=f"Training model for {n_iter} iterations:")
 		def step(i, args):
-			hyperposterior, mixture, parameters = args
-
 			# As init is basically a preliminary e-step, we start with the m-step
-			# --- M-step ---
-			# Seeded from the carry, so a frozen half keeps its incoming value.
-			cluster_mean, cluster_kernel = parameters.cluster_mean, parameters.cluster_kernel
-			task_kernel, noise_kernel = parameters.task_kernel, parameters.noise_kernel
-
-			if not freeze_cluster_parameters:
-				cluster_mean, cluster_kernel = self.cluster_optimiser(
-					parameters.cluster_mean, parameters.cluster_kernel, hyperposterior, grid, jitter=self.jitter
-				).value
-
-			if not freeze_task_parameters:
-				optim_task = self.task_optimiser(
-					parameters.task_kernel + parameters.noise_kernel,
-					dataset,
-					grid,
-					hyperposterior,
-					mixture,
-					jitter=self.jitter,
-				).value
-				task_kernel, noise_kernel = optim_task.left, optim_task.right
-
-			parameters = Parameters(
-				cluster_mean=cluster_mean,
-				cluster_kernel=cluster_kernel,
-				task_kernel=task_kernel,
-				noise_kernel=noise_kernel,
+			return self._em_step(
+				dataset,
+				grid,
+				args,
+				freeze_hyperposterior=freeze_hyperposterior,
+				freeze_mixture=freeze_mixture,
+				freeze_cluster_parameters=freeze_cluster_parameters,
+				freeze_task_parameters=freeze_task_parameters,
 			)
 
-			# --- E-step ---
-			if not freeze_hyperposterior:
-				hyperposterior = self.hyperpost(dataset, grid, mixture, parameters, jitter=self.jitter)
-
-			if not freeze_mixture:
-				mixture = self.mixture_updater(
-					dataset,
-					grid,
-					parameters.task_kernel + parameters.noise_kernel,
-					hyperposterior,
-					mixture,
-					jitter=self.jitter,
-				)
-
-			return hyperposterior, mixture, parameters
-
 		return jax.lax.fori_loop(0, n_iter, step, (hyperposterior, mixture, parameters))
+
+	def _em_step(
+		self,
+		dataset: Dataset,
+		grid: Grid,
+		carry: tuple[Hyperposterior, Mixture, Parameters],
+		freeze_hyperposterior: bool = False,
+		freeze_mixture: bool = False,
+		freeze_cluster_parameters: bool = False,
+		freeze_task_parameters: bool = False,
+	) -> tuple[Hyperposterior, Mixture, Parameters]:
+		"""
+		One VEM iteration: M-step on the parameters, then E-step on the hyperposterior and the
+		mixture.
+
+		The body of `fit`'s loop, factored out so that `EarlyStoppingModel`'s `while_loop` runs the
+		very same iteration as `fit`'s `fori_loop`.
+
+		Parameters
+		----------
+		dataset
+			Dataset being fitted.
+		grid
+			Grid of points and mappings of `dataset`'s inputs onto it.
+		carry
+			Current `(hyperposterior, mixture, parameters)`.
+		freeze_hyperposterior, freeze_mixture, freeze_cluster_parameters, freeze_task_parameters
+			See `fit`.
+
+		Returns
+		-------
+		Updated `(hyperposterior, mixture, parameters)`.
+		"""
+		hyperposterior, mixture, parameters = carry
+
+		# --- M-step ---
+		# Seeded from the carry, so a frozen half keeps its incoming value.
+		cluster_mean, cluster_kernel = parameters.cluster_mean, parameters.cluster_kernel
+		task_kernel, noise_kernel = parameters.task_kernel, parameters.noise_kernel
+
+		if not freeze_cluster_parameters:
+			cluster_mean, cluster_kernel = self.cluster_optimiser(
+				parameters.cluster_mean, parameters.cluster_kernel, hyperposterior, grid, jitter=self.jitter
+			).value
+
+		if not freeze_task_parameters:
+			optim_task = self.task_optimiser(
+				parameters.task_kernel + parameters.noise_kernel,
+				dataset,
+				grid,
+				hyperposterior,
+				mixture,
+				jitter=self.jitter,
+			).value
+			task_kernel, noise_kernel = optim_task.left, optim_task.right
+
+		parameters = Parameters(
+			cluster_mean=cluster_mean,
+			cluster_kernel=cluster_kernel,
+			task_kernel=task_kernel,
+			noise_kernel=noise_kernel,
+		)
+
+		# --- E-step ---
+		if not freeze_hyperposterior:
+			hyperposterior = self.hyperpost(dataset, grid, mixture, parameters, jitter=self.jitter)
+
+		if not freeze_mixture:
+			mixture = self.mixture_updater(
+				dataset,
+				grid,
+				parameters.task_kernel + parameters.noise_kernel,
+				hyperposterior,
+				mixture,
+				jitter=self.jitter,
+			)
+
+		return hyperposterior, mixture, parameters
 
 	@eqx.filter_jit
 	def predict(self, dataset: Dataset, grid: Grid, mixture: Mixture, parameters: Parameters) -> MultivariateNormal:
@@ -293,6 +348,139 @@ class BasicModel(AbstractModel):
 		"""
 		hyperposterior = self.hyperpost(dataset, grid, mixture, parameters, jitter=self.jitter)
 		return self.predictor(dataset, grid, hyperposterior, parameters, jitter=self.jitter)
+
+
+class EarlyStoppingModel(BasicModel):
+	"""
+	`BasicModel` whose VEM loop stops once the ELBO's relative gain falls under `cv_threshold`,
+	rather than always running `n_iter` iterations.
+
+	In practice the loop plateaus well before `n_iter`: every extra iteration then costs two LBFGS
+	solves and a hyperposterior for a change in the parameters below the optimiser's own tolerance.
+
+	Everything else -- mixture initialisation, optimisers, hyperposterior, predictor -- is
+	`BasicModel`'s, and `predict` is inherited unchanged. Only the loop differs: `jax.lax.while_loop`
+	in place of `jax.lax.fori_loop`, both running `_em_step`.
+
+	The stopping rule is the one MagmaClustR's `train_magmaclust` uses, on the *relative* gain
+	`abs(new_elbo - old_elbo) / abs(new_elbo)`. Relative is what makes a single threshold usable
+	across datasets: the ELBO's magnitude scales with the number of observations.
+
+	Attributes
+	----------
+	cv_threshold
+		Convergence threshold on the ELBO's relative gain. MagmaClustR's default is `1e-3`.
+
+	Notes
+	-----
+	`jax_tqdm` only wraps `fori_loop`/`scan`, so `fit` shows no progress bar here. `jax.lax.while_loop`
+	is also not reverse-differentiable, which costs nothing as `fit` never is.
+	"""
+
+	cv_threshold: float
+
+	def __init__(self, *args, cv_threshold: float = 1e-3, **kwargs):
+		"""
+		Parameters
+		----------
+		cv_threshold
+			Convergence threshold on the ELBO's relative gain.
+		*args, **kwargs
+			Passed to `BasicModel`.
+		"""
+		super().__init__(*args, **kwargs)
+		self.cv_threshold = cv_threshold
+
+	@eqx.filter_jit
+	def fit(
+		self,
+		dataset: Dataset,
+		grid: Grid,
+		parameters: Parameters,
+		init_hyperposterior: Hyperposterior | None = None,
+		init_mixture: Mixture | None = None,
+		freeze_hyperposterior: bool = False,
+		freeze_mixture: bool = False,
+		freeze_cluster_parameters: bool = False,
+		freeze_task_parameters: bool = False,
+		n_iter: int = 50,
+	) -> tuple[Hyperposterior, Mixture, Parameters, Array]:
+		"""
+		Fit as `BasicModel.fit` does, stopping once the ELBO has converged.
+
+		Parameters
+		----------
+		n_iter
+			*Maximum* number of iterations. Every other parameter is `BasicModel.fit`'s.
+
+		Returns
+		-------
+		hyperposterior, mixture, parameters
+			As `BasicModel.fit` returns them.
+		elbos
+			ELBO after each iteration, padded with NaN past the iteration the loop stopped at.
+			Shape `(n_iter,)`. `jnp.sum(~jnp.isnan(elbos))` is the number of iterations run.
+		"""
+		if freeze_hyperposterior and init_hyperposterior is None:
+			raise ValueError("Must specify `init_hyperposterior` if `freeze_hyperposterior` is True.")
+
+		if init_mixture is not None:
+			mixture = init_mixture
+		elif init_hyperposterior is not None:
+			T, K = len(dataset.outputs), self.mixture_initialiser.n_clusters
+			mixture = self.mixture_updater(
+				dataset,
+				grid,
+				parameters.task_kernel + parameters.noise_kernel,
+				init_hyperposterior,
+				Mixture(responsibilities=jnp.ones((T, K)) / K),  # Only for uniform mixture proportions
+				jitter=self.jitter,
+			)
+		else:
+			mixture = self.mixture_initialiser(dataset)
+
+		if init_hyperposterior is not None:
+			hyperposterior = init_hyperposterior
+		else:
+			hyperposterior = self.hyperpost(dataset, grid, mixture, parameters, jitter=self.jitter)
+
+		def body(carry):
+			i, previous_elbo, _, elbos, state = carry
+			state = self._em_step(
+				dataset,
+				grid,
+				state,
+				freeze_hyperposterior=freeze_hyperposterior,
+				freeze_mixture=freeze_mixture,
+				freeze_cluster_parameters=freeze_cluster_parameters,
+				freeze_task_parameters=freeze_task_parameters,
+			)
+			hyperposterior, mixture, parameters = state
+
+			current_elbo = elbo(dataset, grid, mixture, parameters, hyperposterior, jitter=self.jitter)
+			# The first iteration has no previous ELBO to compare against (it starts from NaN), so its
+			# ratio is reported as 1: "far from converged", forcing a second iteration.
+			ratio = (current_elbo - previous_elbo) / jnp.abs(current_elbo)
+			ratio = jnp.where(jnp.isnan(ratio), 1.0, ratio)
+
+			return i + 1, current_elbo, ratio, elbos.at[i].set(current_elbo), state
+
+		def not_converged(carry):
+			i, _, ratio, _, _ = carry
+			return (i < n_iter) & (jnp.abs(ratio) >= self.cv_threshold)
+
+		_, _, _, elbos, (hyperposterior, mixture, parameters) = jax.lax.while_loop(
+			not_converged,
+			body,
+			(
+				0,
+				jnp.asarray(jnp.nan),  # No previous ELBO yet; `body` reads the resulting NaN ratio as 1
+				jnp.asarray(1.0),  # Any value above `cv_threshold`, so the loop runs at least once
+				jnp.full(n_iter, jnp.nan),
+				(hyperposterior, mixture, parameters),
+			),
+		)
+		return hyperposterior, mixture, parameters, elbos
 
 
 class GPModel(AbstractModel):

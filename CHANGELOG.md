@@ -17,6 +17,9 @@ before upgrading.
   and multi-channel support as `BasicModel`. Takes a `GPDataset` and `GPParameters`, built by
   `mimosa.synthetic.build_gp_parameters`, and predicts through `mimosa.prediction.GPPredictor`, whose
   `noisy` field selects $f(x^*)$ or $y(x^*)$.
+* `mimosa.models.EarlyStoppingModel`: `BasicModel` whose VEM loop stops once the ELBO's relative gain
+  falls under `cv_threshold`, and additionally returns the ELBO of each iteration.
+  `mimosa.nll.elbo` computes that bound.
 * `skip_parameter_build` on `mimosa.synthetic.generate_data`: use the given `Parameters` as-is,
   instead of rebuilding them with `build_parameters`.
 * new `kind` argument in plot functions to plot task as dots or curves.
@@ -25,6 +28,11 @@ before upgrading.
 * `mimosa.synthetic.SubdomainRemover`: hold out a region of the input space, for every task or for a
   single task/cluster/channel/output — `SubdomainRemover(bounds=((10., 25.),))(dataset, t_id=3)`.
 * `stiffness` argument to `KMeansMixtureInitialiser`, passed through to `soft_kmeans`.
+* `mimosa.utils.Scaler`: min-max scales a Dataset's inputs onto [0, 1] and standardises its outputs,
+  fitted on the training data, and maps grids, distributions and whole datasets back to the original
+  units (`unscale_grid`, `unscale_distribution`, `unscale_dataset`). Exported as `mimosa.Scaler`.
+* `mimosa.pipelines.TrainTestPipeline`: load two CSVs, fit, predict and plot, with every modelling
+  choice fixed and every result de-normalised. Not re-exported by the root module.
 
 ### Changed
 

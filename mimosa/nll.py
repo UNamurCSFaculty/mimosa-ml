@@ -10,7 +10,7 @@ from jax import vmap, Array
 import equinox as eqx
 
 from mimosa.linalg import cho_factor, cho_solve
-from mimosa.data_structures import Dataset, Grid, Hyperposterior, Hyperprior
+from mimosa.data_structures import Dataset, Grid, Hyperposterior, Hyperprior, Mixture, Parameters
 from mimosa.constants import DEFAULT_JITTER
 
 __all__ = [
@@ -21,6 +21,7 @@ __all__ = [
 	"magma_nll",
 	"clusters_nlls",
 	"tasks_nlls",
+	"elbo",
 	"ClusterNLL",
 	"TaskNLL",
 ]
@@ -238,6 +239,84 @@ def tasks_nlls(
 	mappings = grid.mappings[0] if dataset.inputs.shape[0] == 1 else grid.mappings
 	f = vmap(task_nll, in_axes=(0, None if mappings.ndim == 1 else 0, task_ax))
 	return f(dataset.outputs, mappings, task_covs[0] if task_ax is None else task_covs)
+
+
+def elbo(
+	dataset: Dataset,
+	grid: Grid,
+	mixture: Mixture,
+	parameters: Parameters,
+	hyperposterior: Hyperposterior,
+	jitter: Array = DEFAULT_JITTER,
+) -> Array:
+	"""
+	Evidence lower bound of the model.
+
+	The quantity the VEM loop maximises: it increases at every iteration (up to numerical error), so
+	its relative gain is what `mimosa.models.EarlyStoppingModel` watches to decide convergence.
+
+	Built from the same pieces the loop itself uses: `clusters_nlls` for the mean-processes under
+	their prior, `tasks_nlls` weighted by the responsibilities (exactly the loss
+	`mimosa.optimisers.optimise_tasks` minimises), plus the entropies of the mixture and of the
+	hyperposterior.
+
+	Since the mixture is updated *after* the parameters, the ELBO is meant to be evaluated on the
+	carry as it leaves an iteration, i.e. new hyperparameters against the E-step's hyperposterior.
+
+	Parameters
+	----------
+	dataset
+		Dataset being fitted.
+	grid
+		Grid of points and mappings of `dataset`'s inputs onto it.
+	mixture
+		Current mixture.
+	parameters
+		Current model parameters (mean, kernels).
+	hyperposterior
+		Current hyperposterior, consistent with `parameters`.
+	jitter
+		Diagonal jitter added before Cholesky factorizations, for numerical stability.
+
+	Returns
+	-------
+	ELBO. Scalar.
+	"""
+	hyperprior = Hyperprior(
+		mean=parameters.cluster_mean(grid.points, output_ids=grid.output_ids),
+		covariance=parameters.cluster_kernel(grid.points, output_ids=grid.output_ids),
+	)
+	cluster_term = clusters_nlls(hyperposterior, hyperprior, jitter=jitter).sum()
+
+	task_kernel = parameters.task_kernel + parameters.noise_kernel
+	if dataset.inputs.shape[0] == 1:
+		output_ids = dataset.output_ids[0] if dataset.output_ids is not None else None
+		task_covs = task_kernel(dataset.clean_inputs[0], output_ids=output_ids)
+	else:
+		task_covs = task_kernel(dataset.clean_inputs, output_ids=dataset.output_ids)
+
+	task_term = (
+		tasks_nlls(dataset, grid, task_covs, hyperposterior, jitter=jitter) * mixture.responsibilities[..., None]
+	).sum()
+
+	# Entropy of the mixture: sum_i sum_k tau_ik * log(pi_k / tau_ik). A task with zero
+	# responsibility towards a cluster contributes nothing, but would evaluate log(0) first, so the
+	# ratio is only formed where both terms are positive.
+	responsibilities, proportions = mixture.responsibilities, mixture.proportions[None, :]
+	defined = (responsibilities > 0) & (proportions > 0)
+	log_frac = jnp.where(
+		defined,
+		jnp.log(jnp.where(defined, proportions, 1.0)) - jnp.log(jnp.where(defined, responsibilities, 1.0)),
+		0.0,
+	)
+	mixture_entropy = jnp.sum(responsibilities * log_frac)
+
+	# Entropy of each mean-process: sum(log(diag(chol(post_cov)))), i.e. 0.5 * logdet, summed over
+	# mean-processes and channels.
+	post_cov_l = cho_factor(hyperposterior.covariance, jitter=jitter)
+	post_entropy = jnp.sum(jnp.log(jnp.diagonal(post_cov_l, axis1=-2, axis2=-1)))
+
+	return -cluster_term - task_term + mixture_entropy + post_entropy
 
 
 class ClusterNLL(eqx.Module):

@@ -43,7 +43,7 @@ from mimosa.laplace import (
 	ExponentialLaplaceApproximator,
 )
 from mimosa.mixture import KMeansMixtureInitialiser
-from mimosa.models import BasicModel, GPModel
+from mimosa.models import BasicModel, EarlyStoppingModel, GPModel
 from mimosa.plot import (
 	plot_channel,
 	plot_task,
@@ -64,6 +64,7 @@ from mimosa.synthetic import (
 	RandomDataRemover,
 	SubdomainRemover,
 )
+from mimosa.utils import Scaler
 
 __all__ = [
 	# constants
@@ -101,6 +102,7 @@ __all__ = [
 	"ExponentialLaplaceApproximator",
 	# models and prediction
 	"BasicModel",
+	"EarlyStoppingModel",
 	"GPModel",
 	"KMeansMixtureInitialiser",
 	"one_shot_hyperpost",
@@ -126,6 +128,8 @@ __all__ = [
 	"sample_parameters_from_priors",
 	"RandomDataRemover",
 	"SubdomainRemover",
+	# utils
+	"Scaler",
 ]
 
 __version__ = importlib.metadata.version("mimosa-ml")
