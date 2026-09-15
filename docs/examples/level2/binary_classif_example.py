@@ -23,7 +23,7 @@ binned along the input axis, each bin's Beta posterior over the success probabil
 moment-matched with a Gaussian over its log-odds, and the matched variance is given to the model as
 a known, non-trainable noise.
 
-Everything in between is the ordinary pipeline of [the basic example](basic_example.ipynb). Only the
+Everything in between is the ordinary pipeline of [the basic example](../level1/basic_example.ipynb). Only the
 last step differs: predictions live in log-odds space and are mapped back to probabilities.
 
 Use the "launch" button to run it interactively in Colab or clone the repository and

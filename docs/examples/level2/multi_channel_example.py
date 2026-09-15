@@ -58,12 +58,10 @@ from kernax import AffineMean, VarianceKernel, SEKernel, WhiteNoiseKernel
 
 from mimosa import (
 	Dimensions, ModelConfig, Parameters, SubdomainRemover,
-	BasicModel, UnionGrid, Mixture, FunctionPredictor, ObservationPredictor,
+	BasicModel, UnionGrid, KMeansMixtureInitialiser, FunctionPredictor, ObservationPredictor,
 	load_csv, build_parameters, sample_gp,
 	plot_dataset, plot_clusters, plot_single_task_prediction,
 )
-from mimosa.mixture import MixtureInitialiser, _summary_statistics
-from mimosa.kmeans import soft_kmeans
 
 key = jr.PRNGKey(42)
 plt.rcParams['figure.dpi'] = 300
@@ -104,27 +102,6 @@ through the mixture: tasks are clustered once, from the sum of every channel's l
 This example is only about `C`. For `O`, see [the multi-output example](../basic_mo_example.ipynb);
 for the ordinary fit/predict pipeline this one builds on, see [the basic example](../basic_example.ipynb).
 
-## Initialisation
-"""
-
-# %%
-class StiffKMeansInitialiser(MixtureInitialiser):
-	"""`KMeansMixtureInitialiser`'s own recipe, with `stiffness` exposed instead of fixed at 1.0."""
-	prng_key: jax.Array
-	n_clusters: int
-	stiffness: float
-	n_restarts: int
-
-	def __call__(self, dataset):
-		features = jnp.nan_to_num(_summary_statistics(dataset.outputs))
-		_, resp = soft_kmeans(
-			self.prng_key, features, self.n_clusters, stiffness=self.stiffness, n_restarts=self.n_restarts,
-		)
-		return Mixture(responsibilities=resp)
-
-# %% [markdown]
-"""
-
 ## Configuring and fitting
 
 The model is configured the same way as any other mimosa model. Channel handling introduces one new
@@ -151,7 +128,7 @@ key, model_key = jr.split(key)
 model = BasicModel(prng_key=model_key, n_clusters=K)
 model = eqx.tree_at(
 	lambda m: m.mixture_initialiser, model,
-	StiffKMeansInitialiser(prng_key=model_key, n_clusters=K, stiffness=STIFFNESS, n_restarts=N_RESTARTS_KMEANS),
+	KMeansMixtureInitialiser(prng_key=model_key, n_clusters=K, stiffness=STIFFNESS, n_restarts=N_RESTARTS_KMEANS),
 )
 hyperposterior, fitted_mixture, fitted_params = model.fit(
 	dataset, grid, params, n_iter=25, freeze_task_parameters=True,
@@ -211,21 +188,21 @@ cutoff = 64
 second_half = SubdomainRemover(bounds=((float(dataset.inputs[0, cutoff, 0]), float(dataset.inputs[0, -1, 0])),))
 task_kernel = fitted_params.task_kernel + fitted_params.noise_kernel
 
-def mask_and_update(mask_channels, task_ids="all"):
-	"""One E-step against the already-fitted hyperposterior, masking the second half of
-	`mask_channels` for `task_ids` (every task by default)."""
-	dataset_masked, _ = second_half(dataset, t_id=task_ids, c_id=mask_channels)
-	mixture_masked = model.mixture_updater(
-		dataset_masked, grid, task_kernel, hyperposterior, fitted_mixture, jitter=model.jitter,
-	)
-	return dataset_masked, mixture_masked
-
-dataset_both_masked, mixture_both_masked = mask_and_update("all")
+# Both channels masked, every task, then one E-step against the already-fitted hyperposterior.
+dataset_both_masked, _ = second_half(dataset)
+mixture_both_masked = model.mixture_updater(
+	dataset_both_masked, grid, task_kernel, hyperposterior, fitted_mixture, jitter=model.jitter,
+)
 resp_both_all = np.asarray(mixture_both_masked.responsibilities)
 t_demo = int(np.argmin(resp_both_all.max(axis=1)))
 resp_both = resp_both_all[t_demo]
 k_true = int(fitted_mixture.assignments[t_demo])
-dataset_y_masked, mixture_y_masked = mask_and_update(1, task_ids=t_demo)
+
+# Same, with only channel 1 (Y) masked, and only for the task we picked above.
+dataset_y_masked, _ = second_half(dataset, t_id=t_demo, c_id=1)
+mixture_y_masked = model.mixture_updater(
+	dataset_y_masked, grid, task_kernel, hyperposterior, fitted_mixture, jitter=model.jitter,
+)
 resp_y = np.asarray(mixture_y_masked.responsibilities[t_demo])
 
 # %% [markdown]

@@ -227,7 +227,7 @@ plt.show()
 ## Where to go next
 
 * prediction outside the observed locations → end of {doc}`/examples/level1/basic_example`
-* perform a true train-test split on real-world data → end of {doc}`/examples/level1/basic_mt_example`
+* perform a true train-test split on real-world data → end of {doc}`/examples/level2/basic_mt_example`
 * perform model selection, e.g: find an appropriate number of clusters → {doc}`/examples/level2/turnip_example`
 * learn corelation between multiple outputs → {doc}`/examples/level2/multi_output_example`
 * run on multiple independant channels in parallel → {doc}`/examples/level2/multi_channel_example`

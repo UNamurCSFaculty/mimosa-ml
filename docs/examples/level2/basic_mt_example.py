@@ -57,7 +57,7 @@ from mimosa import (
 	Dimensions, ModelConfig, Parameters,
 	BasicModel, UnionGrid,
 	load_csv, build_parameters, sample_gp,
-	plot_dataset, plot_clusters, plot_single_task_prediction,
+	plot_dataset, plot_clusters, plot_single_task_prediction, KMeansGrid,
 )
 from mimosa.mixture import MixtureUpdater
 
@@ -94,7 +94,8 @@ grid, which we build later as the union of every swimmer's inputs.
 # The fitting grid is the union of every swimmer's input points, and G is its size. Grid
 # construction isn't jit-compatible, so it's done here by the caller, outside of fit/predict, rather
 # than owned by the model -- see mimosa.grid.
-fitted_grid = UnionGrid(train_data.inputs)
+key, grid_key = jr.split(key)
+fitted_grid = KMeansGrid(grid_key, train_data.inputs, n_points=256)
 G = len(fitted_grid.points)
 
 # Dimensions: T tasks, K clusters, I input dims, C channels, O correlated outputs, N points
@@ -183,7 +184,8 @@ single cluster here there is only one, so the prediction for a swimmer is direct
 """
 
 # %% 7. Predict
-test_grid = UnionGrid(test_data.inputs)
+key, grid_key = jr.split(key)
+test_grid = KMeansGrid(grid_key, test_data.inputs, n_points=256)
 test_mixture = MixtureUpdater()(test_data, test_grid, fitted_params.task_kernel, hyperposterior, fitted_mixture)
 predictions = model.predict(test_data, test_grid, test_mixture, fitted_params)  # MultivariateNormal, batched (T, K, C, O*G)
 
