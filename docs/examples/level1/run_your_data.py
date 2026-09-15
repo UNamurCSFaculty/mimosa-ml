@@ -1,12 +1,14 @@
 # %% tags=["remove-cell"]
-import importlib.util, subprocess, sys
+import importlib.util, os, subprocess, sys
 from pathlib import Path
+
 if importlib.util.find_spec("mimosa") is None:
+    # When running in Colab, you can select a GPU for execution and un-comment the next line
+    # subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
-# On Colab the notebook runs from /content, where the example's data folder does not exist.
+
 # The docs build runs each notebook from its own level folder, while the data folder is shared at
 # docs/examples/data. On Colab the notebook runs from /content, where neither exists.
-import os
 if Path("../data").is_dir():
     os.chdir("..")
 Path("data").mkdir(exist_ok=True)
@@ -18,8 +20,8 @@ r"""
 A customisable version of {doc}`/examples/level1/basic_example`: same pipeline, but reading a CSV instead of
 generating data. Every cell marked **TODO** is one you are expected to edit.
 
-Written using jupytext's py:percent format. This script can be run cell-by-cell or as a usual Python
-script.
+Use the "launch" button to run it interactively in Colab or clone the repository and
+run the `examples/level1/run_your_data.py` script!
 
 ## CSV format
 
@@ -118,7 +120,7 @@ T, N, C = dataset.outputs.shape
 I = dataset.inputs.shape[-1]
 K, O = 2, 1  # TODO
 
-grid = UnionGrid()(dataset.inputs)  # TODO: RegularGrid / KMeansGrid for a smaller grid
+grid = UnionGrid(dataset.inputs)  # TODO: RegularGrid / KMeansGrid for a smaller grid
 G = grid.points.shape[0]
 
 dims = Dimensions(T=T, K=K, I=I, C=C, O=O, N=N // O, G=G)
@@ -212,7 +214,7 @@ plt.show()
 # %%
 key, sample_key = jr.split(key)
 sample_keys = jr.split(sample_key, 64)
-samples = vmap(lambda k: sample_gp(k, prediction.mean, prediction.covariance))(sample_keys)  # (S, O*G)
+samples = vmap(lambda k: sample_gp(k, prediction))(sample_keys)  # (S, O*G)
 
 fig, ax = plot_single_task_prediction(
 	dataset, grid, dims, hyperposterior, mixture, t_id, c_id, samples=samples, figsize=(8 * dims.C, 6)
@@ -225,7 +227,8 @@ plt.show()
 ## Where to go next
 
 * prediction outside the observed locations → end of {doc}`/examples/level1/basic_example`
-* fit slow, or out of memory → {doc}`/examples/level3/sparse_approximations`, {doc}`/examples/level3/stochastic_learning`
-* NaNs or a diverging loss → {doc}`/sharp_bits`
-* several correlated outputs (`Output2_*` columns) → {doc}`/examples/level2/multi_output_example`
+* perform a true train-test split on real-world data → end of {doc}`/examples/level1/basic_mt_example`
+* perform model selection, e.g: find an appropriate number of clusters → {doc}`/examples/level2/turnip_example`
+* learn corelation between multiple outputs → {doc}`/examples/level2/multi_output_example`
+* run on multiple independant channels in parallel → {doc}`/examples/level2/multi_channel_example`
 """

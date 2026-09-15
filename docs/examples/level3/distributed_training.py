@@ -4,6 +4,6 @@ r"""
 
 🚧 **Placeholder.** This page will show how to shard a fit across several devices.
 
-Written using jupytext's py:percent format. This script can be run cell-by-cell or as a usual Python
-script.
+Use the "launch" button to run it interactively in Colab or clone the repository and
+run the `examples/level3/distributed_training.py` script!
 """

@@ -4,6 +4,6 @@ r"""
 
 🚧 **Placeholder.** This page will show how to trade exactness for scale with inducing points.
 
-Written using jupytext's py:percent format. This script can be run cell-by-cell or as a usual Python
-script.
+Use the "launch" button to run it interactively in Colab or clone the repository and
+run the `examples/level3/sparse_approximations.py` script!
 """

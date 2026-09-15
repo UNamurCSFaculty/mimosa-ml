@@ -1,25 +1,40 @@
 # %%
-import os
+import importlib.util, os, subprocess, sys
 from pathlib import Path
 from urllib.request import urlretrieve
+
+if importlib.util.find_spec("mimosa") is None:
+    # When running in Colab, you can select a GPU for execution and un-comment the next line
+    # subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
+
 # The docs build runs each notebook from its own level folder, while the data folder is shared at
 # docs/examples/data. On Colab the notebook runs from /content, where neither exists.
-DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/data"
 if Path("../data").is_dir():
     os.chdir("..")
 Path("data").mkdir(exist_ok=True)
-if not Path("data", "electricity_tasks_MIMOSA.csv").exists():
-    urlretrieve(f"{DATA_URL}/electricity_tasks_MIMOSA.csv", Path("data", "electricity_tasks_MIMOSA.csv"))
+
+DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/data"
+for name in ("electricity_tasks_MIMOSA.csv",):
+    if not Path("data", name).exists():
+        urlretrieve(f"{DATA_URL}/{name}", Path("data", name))
 
 # %% [markdown]
 r"""
-# **Predicting Energy Consumption across Multiple Clients and Temporal Windows**
-This tutorial explores a real-world application that leverages two core components of the Mimosa framework: *Multi-Output* and *Multi-Task* learning. The objective is to capture dependencies not only across the **input** dimension but also across **multiple correlated** data sources. To illustrate the Multi-Output Multi-Task (MOMT) framework, we analyze the *Electricity Hourly* dataset, sourced from the Monash Time Series Forecasting Archive (available at: https://zenodo.org/records/4656140).
+# Predicting Energy Consumption across Multiple Clients and Temporal Windows
+This tutorial explores a real-world application that leverages two core components of the Mimosa framework:
+*Multi-Output* and *Multi-Task* learning. The objective is to capture dependencies not only across the **input**
+dimension but also across **multiple correlated** data sources. To illustrate the Multi-Output Multi-Task (MOMT)
+framework, we analyze the *Electricity Hourly* dataset, sourced from the Monash Time Series Forecasting Archive
+(available at: [https://zenodo.org/records/4656140](https://zenodo.org/records/4656140)).
+
+Use the "launch" button to run it interactively in Colab or clone the repository and
+run the `examples/level2/multi_output_example.py` script!
 """
 
 # %% [markdown]
 r"""
-## **Getting started**
+## Getting started
 First, let us initialize the environment by loading the necessary libraries, configurations, and helper functions:
 """
 
@@ -38,190 +53,38 @@ import equinox as eqx
 
 from kernax import ConvolutionKernel, ZeroMean, VarianceKernel, SEKernel, PeriodicKernel, WhiteNoiseKernel, BlockMean, ConstantMean, ConvolutionKernel, BlockDiagKernel, ICMKernel, LCMKernel
 
-from mimosa import (Dimensions, ModelConfig, Parameters, BasicModel, FunctionPredictor, ObservationPredictor, load_csv, build_parameters)
+from mimosa import (Dimensions, ModelConfig, GPModel, Parameters, BasicModel, FunctionPredictor, ObservationPredictor,
+                    SubdomainRemover, load_csv, build_parameters, build_gp_parameters, MergedGrid)
 from mimosa.linalg import find_exact_mappings
-from mimosa.data_structures import Dataset, Grid, Hyperposterior, Mixture, MultivariateNormal
-from mimosa.grid import MultiOutputUnionGrid, RegularGrid, MergedGrid
+from mimosa.data_structures import Dataset, Grid, Hyperposterior, Mixture, MultivariateNormal, GPDataset, GPParameters
+from mimosa.grid import MultiOutputUnionGrid, RegularGrid, MergedGrid, UnionGrid
 from mimosa.linalg import find_exact_mappings
-from mimosa.plot import plot_dataset, plot_clusters, plot_single_task_prediction, plot_task
+from mimosa.plot import plot_dataset, plot_clusters, plot_task, plot_single_task_prediction
 from mimosa.sampling import sample_gp
 from mimosa.synthetic import build_task_kernel
+from mimosa.mixture import MixtureUpdater
 
 key = jr.PRNGKey(42)
 plt.rcParams["figure.dpi"] = 300
-
-
-def dimensions_from_dataset(dataset: Dataset, n_clusters: int = 1) -> Dimensions:
-    """Infer `Dimensions` directly from a loaded dataset.
-
-    This avoids keeping hard-coded dimensions that can become inconsistent with
-    the real data.
-    """
-    n_tasks, total_rows, n_channels = dataset.outputs.shape
-    n_points = dataset.inputs.shape[1]
-    n_outputs = total_rows // n_points
-    return Dimensions(T=n_tasks, K=n_clusters, I=dataset.inputs.shape[-1], C=n_channels, O=n_outputs, N=n_points, G=n_points)
-
-
-def subset_tasks(dataset: Dataset, task_ids) -> Dataset:
-    """Keep only a chosen subset of tasks.
-
-    This is a small utility used to build the training set and the held-out
-    prediction set from the full dataset.
-    """
-    task_ids = jnp.asarray(task_ids)
-    return Dataset(
-        inputs=dataset.inputs[task_ids],
-        outputs=dataset.outputs[task_ids],
-        known_output_noise=None if dataset.known_output_noise is None else dataset.known_output_noise[task_ids],
-        output_ids=None if dataset.output_ids is None else dataset.output_ids[task_ids],
-    )
-
-
-def output_slice(dims: Dimensions, output_id: int) -> slice:
-    """Locate one output block inside the stacked `(O * N)` representation.
-
-    In this dataset, all values of output 0 come first, then all values of
-    output 1, and so on.
-    """
-    return slice(output_id * dims.N, (output_id + 1) * dims.N)
-
-
-def mask_interval(dataset: Dataset, dims: Dimensions, low: float, high: float, task_ids=None, output_ids=None) -> Dataset:
-    """Replace observations by `NaN` on a chosen input interval.
-
-    This is the core helper for both experiments: interpolation masks a central
-    interval on one output, forecasting masks the tail interval on held-out
-    tasks.
-    """
-    selected_task_ids = range(dataset.outputs.shape[0]) if task_ids is None else task_ids
-    selected_output_ids = range(dims.O) if output_ids is None else output_ids
-
-    outputs = dataset.outputs
-    noise = dataset.known_output_noise
-
-    for task_id in selected_task_ids:
-        interval_mask = (dataset.inputs[task_id, :, 0] > low) & (dataset.inputs[task_id, :, 0] < high)
-        for output_id in selected_output_ids:
-            rows = output_slice(dims, output_id)
-            outputs = outputs.at[task_id, rows, :].set(
-                jnp.where(interval_mask[:, None], jnp.nan, outputs[task_id, rows, :])
-            )
-            if noise is not None:
-                noise = noise.at[task_id, rows, :].set(
-                    jnp.where(interval_mask[:, None], jnp.nan, noise[task_id, rows, :])
-                )
-
-    return Dataset(inputs=dataset.inputs, outputs=outputs, known_output_noise=noise, output_ids=dataset.output_ids)
-
-
-def single_task_prediction_parameters(
-        fitted_params: Parameters,
-        dims: Dimensions,
-        model_config: ModelConfig,
-        n_tasks: int = 1,
-    ) -> Parameters:
-        """Adapt shared task/noise kernels to a new task batch size."""
-        if not model_config.shared_task_hps:
-            raise NotImplementedError(
-                "single_task_prediction_parameters currently assumes shared_task_hps=True."
-            )
-
-        def resize_task_batch(kernel):
-            return type(kernel)(
-                kernel.inner,
-                batch_size=n_tasks,
-                batch_in_axes=kernel.batch_in_axes,
-                batch_over_inputs=kernel.batch_over_inputs is not None,
-                batch_over_kwargs=kernel.batch_over_kwargs is not None,
-            )
-
-        task_kernel = resize_task_batch(fitted_params.task_kernel)
-        noise_kernel = resize_task_batch(fitted_params.noise_kernel)
-        return Parameters(
-            cluster_mean=fitted_params.cluster_mean,
-            cluster_kernel=fitted_params.cluster_kernel,
-            task_kernel=task_kernel,
-            noise_kernel=noise_kernel,
-        )
-
-
-def dataset_on_existing_grid(dataset: Dataset, grid: Grid, dims: Dimensions) -> Grid:
-    """Map a new dataset onto the grid built from the training tasks.
-
-    This is needed for forecasting: the held-out tasks must be evaluated on the
-    same grid as the model learned during training.
-    """
-    base_mappings = vmap(lambda task_inputs: find_exact_mappings(grid.points, task_inputs))(dataset.inputs)
-    offset = jnp.repeat(jnp.arange(dims.O), dataset.inputs.shape[1]) * len(grid.points)
-    mappings = jnp.tile(base_mappings, dims.O) + offset
-    is_padding = jnp.tile(jnp.any(jnp.isnan(dataset.inputs), axis=-1), dims.O)
-    mappings = jnp.where(is_padding, dims.O * len(grid.points), mappings)
-    return Grid(points=grid.points, output_ids=grid.output_ids, mappings=mappings)
-
-def make_single_task_mo_dataset(dataset: Dataset, dims: Dimensions, task_id: int) -> Dataset:
-    task_inputs = dataset.inputs[task_id]
-    stacked_inputs = jnp.concatenate([task_inputs for _ in range(dims.O)], axis=0)[None, ...]
-    output_ids = jnp.repeat(jnp.arange(dims.O), dims.N)[None, :]
-    return Dataset(
-        inputs=stacked_inputs,
-        outputs=dataset.outputs[task_id:task_id + 1],
-        known_output_noise=None if dataset.known_output_noise is None else dataset.known_output_noise[task_id:task_id + 1],
-        output_ids=output_ids,
-    )
-
-def mask_single_task_window(dataset: Dataset, dims: Dimensions, low: float, high: float) -> Dataset:
-    interval_mask = (dataset.inputs[0, :dims.N, 0] > low) & (dataset.inputs[0, :dims.N, 0] < high)
-    outputs = dataset.outputs
-    noise = dataset.known_output_noise
-
-    for output_id in range(dims.O):
-        rows = slice(output_id * dims.N, (output_id + 1) * dims.N)
-        outputs = outputs.at[0, rows, :].set(
-            jnp.where(interval_mask[:, None], jnp.nan, outputs[0, rows, :])
-        )
-        if noise is not None:
-            noise = noise.at[0, rows, :].set(
-                jnp.where(interval_mask[:, None], jnp.nan, noise[0, rows, :])
-            )
-
-    return Dataset(
-        inputs=dataset.inputs,
-        outputs=outputs,
-        known_output_noise=noise,
-        output_ids=dataset.output_ids,
-    )
-
-
-def plot_hidden_truth(reference_dataset: Dataset, masked_dataset: Dataset, dims: Dimensions, task_id: int, fig, ax, output_id="all"):
-    """Overlay the values that were deliberately hidden during an experiment.
-
-    This is only a plotting aid: it shows the ground truth at the masked points
-    so students can visually compare prediction and truth.
-    """
-    shown_outputs = range(dims.O) if output_id == "all" else [output_id]
-    x = np.asarray(reference_dataset.inputs[task_id, :, 0])
-
-    for row, current_output in enumerate(shown_outputs):
-        rows = output_slice(dims, current_output)
-        y_ref = np.asarray(reference_dataset.outputs[task_id, rows, 0])
-        y_masked = np.asarray(masked_dataset.outputs[task_id, rows, 0])
-        hidden = np.isnan(y_masked) & ~np.isnan(y_ref)
-        ax[row, 0].scatter(x[hidden], y_ref[hidden], color="tab:red", marker="x", s=25, label="held-out truth" if row == 0 else None)
-
-    handles, labels = ax[0, 0].get_legend_handles_labels()
-    if "held-out truth" in labels:
-        fig.legend(handles, labels, loc="outside upper right")
+jax.devices()
 
 # %% [markdown]
 r"""
-The *Electricity* dataset contains hourly power consumption records for 321 clients spanning from 2012 to 2014. In our framework, each client represents an **output**, *i.e.* a distinct target variable we aim to predict. The temporal dynamics of each client exhibit a recurrent 72-hour pattern, yielding a total of 356 sequential windows over the two-year period.
+The *Electricity* dataset contains hourly power consumption records for 321 clients spanning from 2012 to 2014. 
+In our framework, each client represents an **output**, *i.e.* a distinct target variable we aim to predict. 
+The temporal dynamics of each client exhibit a recurrent 72-hour pattern, yielding a total of 356 sequential 
+windows over the two-year period.
 
-During preprocessing, the continuous signal for each output was segmented into these 356 discrete 72-hour windows. Consequently, each window is formulated as an individual **task**, interpreted as a specific realization of an underlying latent phenomenon. For this tutorial, we restrict our analysis to two specific outputs (clients 8 and 16). Feel free to download the full dataset and experiment with alternative pairs (e.g., clients 4 & 14, 6 & 15, or 11 & 17).
+During preprocessing, the continuous signal for each output was segmented into these 356 discrete 72-hour windows. 
+Consequently, each window is formulated as an individual **task**, interpreted as a specific realization of an 
+underlying latent phenomenon. For this tutorial, we restrict our analysis to two specific outputs (clients 8 and 16). 
+Feel free to download the full dataset and experiment with alternative pairs (e.g., clients 4 & 14, 6 & 15, or 11 & 17).
 
-*Note: We advise a reduced number of outputs simultaneously (max 5-6), as the computational complexity of the inference scales cubically with the number of outputs. See "No dark magic here" section for more details.*
+*Note: We advise a reduced number of outputs simultaneously (max 5-6), as the computational complexity of the 
+inference scales cubically with the number of outputs. See "No dark magic here" section for more details.*
 
-The preprocessing has already been completed for your convenience. You can load the prepared dataset using the following command:
+The preprocessing has already been completed for your convenience. You can load the prepared dataset using the 
+following command:
 """
 
 # %%
@@ -229,35 +92,26 @@ full_dataset = load_csv("data/electricity_tasks_MIMOSA.csv")
 
 # %% [markdown]
 r"""
-As with any *Multi-Task* setting in Mimosa, we must specify the number of training tasks (`TRAIN_TASK_COUNT`) and the number of tasks reserved for prediction (`PRED_TASK_COUNT`). While you may adjust these parameters, utilizing 50 training tasks provides a robust demonstration of the *Multi-Output Multi-Task* framework's capabilities while remaining time-training friendly.
+As with any *Multi-Task* setting in Mimosa, we must specify the number of training tasks (`TRAIN_TASK_COUNT`) and 
+the number of tasks reserved for prediction (`PRED_TASK_COUNT`). While you may adjust these parameters, utilizing 
+50 training tasks provides a robust demonstration of the *Multi-Output Multi-Task* framework's capabilities while 
+remaining time-training friendly.
 """
 
 # %%
 TRAIN_TASK_COUNT = 50
 PRED_TASK_COUNT = 10
 
-train_task_ids = jnp.arange(TRAIN_TASK_COUNT)
-pred_task_ids = jnp.arange(TRAIN_TASK_COUNT, TRAIN_TASK_COUNT + PRED_TASK_COUNT)
-
-train_dataset = subset_tasks(full_dataset, train_task_ids)
-pred_dataset = subset_tasks(full_dataset, pred_task_ids)
+train_dataset = full_dataset[:TRAIN_TASK_COUNT]
+pred_dataset = full_dataset[TRAIN_TASK_COUNT:TRAIN_TASK_COUNT+PRED_TASK_COUNT]
 
 # %% [markdown]
 r"""
-Throughout the modeling process, Mimosa relies on two primary objects to manage dataset dimensions and model parameter structures: `Dimensions` and `ModelConfig`.
+In the *Electricity* dataset, tasks are evaluated on a shared temporal input grid, discretized from hour 0 to hour 72. 
+Given that we are modeling 2 **outputs**, the concatenated grid comprises $72 \times 2 = 144$ points.
 
-The `Dimensions` object tracks the scale of all relevant Mimosa parameters:
-    * T: Number of training tasks
-    * K: Number of latent clusters
-    * I: Dimensionality of inputs
-    * C: Number of channels
-    * O: Number of correlated outputs
-    * N: Number of observed points per task
-    * G: Total number of points in the global grid
-
-In the *Electricity* dataset, tasks are evaluated on a shared temporal input grid, discretized from hour 0 to hour 72. Given that we are modeling 2 **outputs**, the concatenated grid comprises $72 \times 2 = 144$ points.
-
-The `ModelConfig` object defines the parameter-sharing strategy across tasks, clusters, channels, and outputs, as well as whether tasks or outputs share identical input locations. Since our current application does not involve *Multi-Channel* or *Multi-Cluster* settings, the corresponding configuration parameters remain at their default values.
+The `ModelConfig` object defines the parameter-sharing strategy across tasks, clusters, channels, and outputs, as well 
+as whether tasks or outputs share identical input locations.
 """
 
 # %%
@@ -265,97 +119,53 @@ T_train, N, C = train_dataset.outputs.shape
 I = train_dataset.inputs.shape[-1]
 
 train_dims = Dimensions(T=T_train, K=1, I=I, C=C, O=2, N=int(N/2), G=144)
-print(f"Dimensions: {train_dims}")
-
-model_config = ModelConfig(
-	shared_task_hps=True,
-	isotopic_tasks=True,
-	isotopic_output_in_grid=True,
-	isotopic_output_in_tasks=True,
-)
-print(f"Model config: {model_config}")
+model_config = ModelConfig(isotopic_tasks=False, isotopic_output_in_grid=True, isotopic_output_in_tasks=True,)
 
 # %% [markdown]
 r"""
-Let us visually explore the dataset. Each **output** (client) is displayed in a separate subplot, while each distinct color corresponds to a specific **task** (a 72-hour temporal window).
+Let us visually explore the dataset. Each **output** (client) is displayed in a separate subplot, while each distinct 
+color corresponds to a specific **task** (a 72-hour temporal window).
 """
 
 # %%
-plt.close('all')
-
-plt.style.use('ggplot')
-plt.rcParams.update({
-    'axes.facecolor': 'white','axes.grid': False,'axes.edgecolor': 'black','axes.labelcolor': 'black','xtick.color': 'black',
-    'ytick.color': 'black','text.color': 'black'
-})
-ggplot_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-fig, ax = None, None
-
-# Loop on tasks
-for t in range(train_dims.T):
-    c = ggplot_colors[t % len(ggplot_colors)]
-    fig, ax = plot_task(train_dataset, train_dims, t_id=t, fig=fig, ax=ax, figsize=(8,6), color=c, alpha=0.4)
-
-for row in range(train_dims.O):
-    for col in range(train_dims.C):
-        current_ax = ax[row, col]
-        current_ax.set_xlabel("Hours")
-        client_id = 8 if row == 0 else 16
-        current_ax.set_ylabel(f"Electricity consumption")
-        current_ax.set_title(f"Client {client_id}")
-
-fig.suptitle("Training tasks")
-
+_fig, _ax = plot_dataset(train_dataset, train_dims, figsize=(8 * train_dims.C, 6), color_by_task=True)
 plt.show()
 
 # %% [markdown]
 r"""
-Although the **outputs** vary in magnitude and mean, a clear underlying correlation is observable between clients consumptions. Furthermore, within each **output** (client), a consistent temporal structure, shared across all **tasks**, is highly discernible. In the subsequent experiments, our objective is to exploit the correlations present across both **outputs** and **tasks** to generate accurate probabilistic predictions.
+Although the **outputs** vary in magnitude and mean, a clear underlying correlation is observable between clients 
+consumptions. Furthermore, within each **output** (client), a consistent temporal structure, shared across all 
+**tasks**, is highly discernible. In the subsequent experiments, our objective is to exploit the correlations present 
+across both **outputs** and **tasks** to generate accurate probabilistic predictions.
 """
 
 # %% [markdown]
 r"""
-## **Interpolation experiment: when *Multi-Output* fills the gap**
-Suppose client 8 experiences an electrical meter outage between hours 24 and 48 across every task (*i.e.* for both the `TRAIN_TASK_COUNT` and `PRED_TASK_COUNT` tasks).
+## Interpolation experiment: when *Multi-Output* fills the gap
+Suppose client 8 experiences an electrical meter outage between hours 24 and 48 across every task (*i.e.* for both the 
+`TRAIN_TASK_COUNT` and `PRED_TASK_COUNT` tasks).
 """
 
 # %%
-interp_low = 24
-interp_high = 48
+interp_bounds = ((24, 48),)
 interp_output_id = 0
-interp_dataset = mask_interval(train_dataset, train_dims, low=interp_low, high=interp_high, output_ids=[interp_output_id])
+interp_remover = SubdomainRemover(bounds=interp_bounds)
+interp_dataset, interp_held_out = interp_remover(train_dataset, o_id=interp_output_id)
 
-plt.close('all')
-plt.style.use('ggplot')
-plt.rcParams.update({
-    'axes.facecolor': 'white','axes.grid': False,'axes.edgecolor': 'black','axes.labelcolor': 'black','xtick.color': 'black',
-    'ytick.color': 'black','text.color': 'black'
-})
-
-_ggplot_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-_fig, _ax = None, None
-
-for _t in range(train_dims.T):
-    _c = _ggplot_colors[_t % len(_ggplot_colors)]
-    _fig, _ax = plot_task(interp_dataset, train_dims, t_id=_t, fig=_fig, ax=_ax, figsize=(10,8), color=_c, alpha=0.4)
-
-for _row in range(train_dims.O):
-    for _col in range(train_dims.C):
-        _current_ax = _ax[_row, _col]
-        _current_ax.set_xlabel("Hours")
-        _client_id = 8 if _row == 0 else 16
-        _current_ax.set_ylabel("Electricity consumption")
-        _current_ax.set_title(f"Client {_client_id}")
-
-_fig.suptitle("Training tasks")
-
+_fig, _ax = plot_dataset(interp_dataset, train_dims, figsize=(8 * train_dims.C, 6), color_by_task= True)
 plt.show()
 
 # %% [markdown]
 r"""
-Can we reconstruct the missing consumption of client 8 by leveraging other sources of data? This is where *Multi-Output* modeling helps: we use the observed trajectory of client 16 on $[24\text{h}, 48\text{h}]$ to inform predictions for client 8 over the exact same window. Feel free to modify the lower and upper bounds of the missing window, as well as the output/client on which we mask data.
+Can we reconstruct the missing consumption of client 8 by leveraging other sources of data? This is where 
+*Multi-Output* modeling helps: we use the observed trajectory of client 16 on $[24\text{h}, 48\text{h}]$ to 
+inform predictions for client 8 over the exact same window. Feel free to modify the lower and upper bounds 
+of the missing window, as well as the output/client on which we mask data.
 
-Before training, we must specify the structure of the parameters. Hyperparameter initialization values are not critical, as they will be optimized during training. In this example, we use a Linear Model of Coregionalization (LCM) kernel for both the mean process *and* the task process kernels. You can experiment with alternative structures such as an Intrinsic Coregionalization Model (ICM) or Convolution Process kernels by adjusting `base_init_params`.
+Before training, we must specify the structure of the parameters. Hyperparameter initialization values are not 
+critical, as they will be optimized during training. In this example, we use a Linear Model of Coregionalization 
+(LCM) kernel for both the mean process *and* the task process kernels. You can experiment with alternative structures 
+such as an Intrinsic Coregionalization Model (ICM) or Convolution Process kernels by adjusting `base_init_params`.
 """
 
 # %%
@@ -366,7 +176,10 @@ base_init_params = Parameters(
             VarianceKernel(10.0) * SEKernel(length_scale=2.0),
             VarianceKernel(5.0) * SEKernel(length_scale=0.5)
         ],
-        coregionalization_matrices=[jnp.ones((train_dims.O, train_dims.O)), jnp.ones((train_dims.O, train_dims.O))],
+        coregionalization_matrices=[
+            jnp.ones((train_dims.O, train_dims.O)),
+            jnp.ones((train_dims.O, train_dims.O))
+        ],
         kappas=[jnp.ones(train_dims.O), jnp.ones(train_dims.O)]
     ) + BlockDiagKernel(WhiteNoiseKernel(noise=20.), n_outputs=train_dims.O, output_hps_in_axes=0),
     task_kernel=LCMKernel(
@@ -377,45 +190,37 @@ base_init_params = Parameters(
     noise_kernel=BlockDiagKernel(WhiteNoiseKernel(noise=5.), n_outputs=train_dims.O, output_hps_in_axes=0)
 )
 
-# We modify the Model Configuration by turning isotopic_tasks & isotopic_output_in_tasks to False since all outputs are not observed on the same grid
-model_interp_config = ModelConfig(
-	shared_task_hps=True,
-	isotopic_tasks=False,
-	isotopic_output_in_grid=True,
-	isotopic_output_in_tasks=False,
-)
-
-# We have to "build" the parameters so that they match the model config and dimensions
-init_params = build_parameters(base_init_params, train_dims, model_interp_config)
+# We "build" the parameters so that they match the model config and dimensions
+init_params = build_parameters(base_init_params, train_dims, model_config)
 
 # %% [markdown]
 r"""
-Next, we have to define the training grid as the union of every task's input points. Grid construction isn't jit-compatible, so you have to built it once, outside of fit/predict. `MultiOutputUnionGrid` is `UnionGrid`'s multi-output counterpart: it needs `model_config` too, to determine whether outputs share grid/task input locations.
+Next, we have to define the training grid as the union of every task's input points. 
+`MultiOutputUnionGrid` is `UnionGrid`'s multi-output counterpart: it needs `model_config` too, to determine whether 
+outputs share grid/task input locations.
 """
 
 # %%
-train_grid = MultiOutputUnionGrid(n_outputs=2)(train_dataset, model_interp_config)
+train_grid = MultiOutputUnionGrid(train_dataset, model_config, n_outputs=2)
+pred_grid = MultiOutputUnionGrid(pred_dataset, model_config, n_outputs=2)
+full_grid = MergedGrid(train_grid, pred_grid)
 
 # %% [markdown]
 r"""
-We can now instantiate and train the model! Feel free to increase `TRAIN_N_ITER` to run more iterations of the EM algorithm. Regarding prediction, you can plot either the latent function $f(.)$ (`PREDICT_OBSERVATIONS=False`) **or** the predicted observations $y(.) = f(.) + \epsilon(.)$ (`PREDICT_OBSERVATIONS=True`).
+We can now instantiate and train the model! Feel free to increase `n_iter` to run more iterations of the 
+EM algorithm. 
 """
 
 # %%
-_, train_key = jr.split(key)
+key, train_key = jr.split(key)
 
-# False predicts the latent function f(.); True predicts observations y(.) = f(.) + noise.
-PREDICT_OBSERVATIONS = True
-PREDICTOR = ObservationPredictor() if PREDICT_OBSERVATIONS else FunctionPredictor()
-
-model_interp = BasicModel(prng_key=train_key, n_clusters=train_dims.K, predictor=PREDICTOR)
-TRAIN_N_ITER = 25
+model_interp = BasicModel(prng_key=train_key, n_clusters=train_dims.K, predictor=ObservationPredictor())  # Switch to `FunctionPredictor()` to predict the latent function instead of observations
 
 interp_hyperposterior, interp_mixture, interp_params = model_interp.fit(
-    interp_dataset,
-    train_grid,
+    train_dataset,
+    full_grid,
     init_params,
-    n_iter=TRAIN_N_ITER,
+    n_iter=25,
 )
 
 # %% [markdown]
@@ -432,169 +237,101 @@ Notice how the prediction of client 8 borrows information from the observations 
 """
 
 # %%
+# Prediction for task 0
 interp_task_id = 0
-interp_predictions = model_interp.predict(interp_dataset, train_grid, interp_mixture, interp_params)
-interp_k_id = int(interp_mixture.assignments[interp_task_id])
-interp_prediction = interp_predictions[interp_task_id, interp_k_id, 0]
+interp_prediction = model_interp.predict(interp_dataset, train_grid, interp_mixture, interp_params)[interp_task_id, 0, 0]
 
-_fig, _ax = plot_dataset(interp_dataset, train_dims, mixture=interp_mixture, c_id=0, figsize=(8, 10), alpha=0.1)
-for _axis in _ax.flat:
-        for _points in _axis.collections:
-            _points.set_facecolor("tab:orange")
-            _points.set_edgecolor("tab:orange")
-
-_fig, _ax = plot_single_task_prediction(interp_dataset, train_grid, train_dims, interp_hyperposterior, interp_mixture, interp_task_id,
-    c_id=0, fig=_fig, ax=_ax, prediction=interp_prediction, point_color="black", prediction_color="black")
-
-plot_hidden_truth(train_dataset, interp_dataset, train_dims, interp_task_id, _fig, _ax, output_id="all")
-
-_fig.suptitle(f"Prediction task-specific for task {interp_task_id}")
-
-plt.show()
-
-# %% [markdown]
-r"""
-Instead of the traditional "posterior mean + 95% IC" representation, one can display samples of the predictive distributions, computed by sampling the predictive covariance of the task we want to predict.
-"""
-
-# %%
 # Draw samples from that prediction
 n_samples = 64
 _, _sample_key = jr.split(key)
 sample_keys = jr.split(_sample_key, n_samples)
-samples = vmap(lambda k: sample_gp(k, interp_prediction.mean, interp_prediction.covariance))(sample_keys)
+samples = vmap(lambda k: sample_gp(k, interp_prediction))(sample_keys)
 
-_fig2, _ax2 = plot_dataset(train_dataset, train_dims, mixture=interp_mixture, c_id=0, figsize=(8, 10), alpha=0.1)
-for _axis in _ax2.flat:
-        for _points in _axis.collections:
-            _points.set_facecolor("tab:orange")
-            _points.set_edgecolor("tab:orange")
-
-_fig2, _ax2 = plot_single_task_prediction(interp_dataset, train_grid, train_dims, interp_hyperposterior, interp_mixture,
-    interp_task_id, c_id=0, samples=samples, fig=_fig2, ax=_ax2)
-plot_hidden_truth(train_dataset, interp_dataset, train_dims, interp_task_id, _fig2, _ax2, output_id="all")
-
+_fig2, _ax2 = plot_dataset(train_dataset, train_dims, mixture=interp_mixture, c_id=0, figsize=(8, 10), color_by_task=True, alpha=0.1)
+_fig2, _ax2 = plot_single_task_prediction(interp_dataset, train_grid, train_dims, interp_hyperposterior, interp_mixture, 
+    interp_task_id, c_id=0, samples=samples, sample_alpha=0.1, fig=_fig2, ax=_ax2)
+_fig2, _ax2 = plot_task(interp_held_out, train_dims, interp_task_id, c_id=0, fig=_fig2, ax=_ax2, color="red", marker="x")
 _fig2.suptitle(f"Prediction task-specific (samples) for task {interp_task_id}")
 plt.show()
 
 # %% [markdown]
 r"""
-You can also evaluate predictions on a custom input grid by merging it with `train_grid`. Once merged, recompute both the hyperposterior and the task-specific predictions on this new grid. Feel free to adjust the grid resolution to your needs!
+To measure the value of information transferred from client 16, we now fit a single-output *Multi-Task* GP using 
+exactly the exact same tasks and missing window. Because this model only accesses observations from client 8, it 
+serves as an ablation baseline **without** cross-output information. We define a classic SE kernel for both mean and 
+task processes; feel free to choose another design (e.g linear, periodic, rational quadratic ...), even if the 
+predictive distribution falling in the missing window will not be really impacted.
 """
 
 # %%
-fine_regular_points = RegularGrid(bounds=((0.0, 72.0),), n_points=289).compute_points(train_dataset.inputs)
-fine_grid = Grid(points=fine_regular_points, output_ids=None, mappings=None, n_outputs=train_dims.O)
-prediction_grid = MergedGrid(train_grid, fine_grid)
-
-prediction_hyperposterior = model_interp.hyperpost(interp_dataset, prediction_grid, interp_mixture, interp_params,
-        jitter=jnp.asarray(1e-7),
-)
-prediction_outputs = model_interp.predict(interp_dataset, prediction_grid, interp_mixture, interp_params)
-_interp_k_id = int(interp_mixture.assignments[0])
-prediction_full = prediction_outputs[0, interp_k_id, 0]
-
-fine_indices = prediction_grid.sources[1]
-fine_prediction = prediction_full.marginal(fine_indices)
-fine_hyperposterior = prediction_hyperposterior.marginal(fine_indices)
-
-_interp_prediction = fine_prediction
-
-_fig, _ax = plot_dataset(interp_dataset, train_dims, mixture=interp_mixture, c_id=0, figsize=(8, 10), alpha=0.1)
-for _axis in _ax.flat:
-        for _points in _axis.collections:
-            _points.set_facecolor("tab:orange")
-            _points.set_edgecolor("tab:orange")
-
-_fig, _ax = plot_single_task_prediction(interp_dataset, prediction_grid, train_dims, prediction_hyperposterior, interp_mixture,
-    interp_task_id, c_id=0, fig=_fig, ax=_ax, prediction=prediction_full, point_color="black", prediction_color="black")
-
-plot_hidden_truth(train_dataset, interp_dataset, train_dims, interp_task_id, _fig, _ax, output_id="all")
-
-_fig.suptitle(f"Prediction task-specific for task {interp_task_id}")
-
-plt.show()
-_prediction_block = np.asarray(
-    prediction_full.mean[:len(prediction_grid.points)]
-)
-_hyperposterior_block = np.asarray(
-    prediction_hyperposterior.mean[0, 0, :len(prediction_grid.points)]
-)
-
-# %% [markdown]
-r"""
-To measure the value of information transferred from client 16, we now fit a single-output *Multi-Task* GP using exactly the exact same tasks and missing window. Because this model only accesses observations from client 8, it serves as an ablation baseline **without** cross-output information. We define a classic SE kernel for both mean and task processes; feel free to choose another design (e.g linear, periodic, rational quadratic ...), even if the predictive distribution falling in the missing window will not be really impacted.
-"""
-
-# %%
-from mimosa.data_structures import Dataset as _Dataset
-from mimosa.grid import UnionGrid as _UnionGrid
-
 # Keep only output 0 (client 8), using the same training tasks as the MOMT model.
-client8_dataset = _Dataset(
+single_output_dataset = Dataset(
     inputs=train_dataset.inputs,
-    outputs=train_dataset.outputs[:, :train_dims.N, :],
-    known_output_noise=(
-        None
-        if train_dataset.known_output_noise is None
-        else train_dataset.known_output_noise[:, :train_dims.N, :]
-    ),
+    outputs=train_dataset.outputs[:, :train_dims.N, :],  # Only first N points -> output 0
+    known_output_noise=None,
 )
-client8_dims = Dimensions(T=train_dims.T, K=1, I=train_dims.I, C=train_dims.C, O=1, N=train_dims.N, G=train_dims.N)
-client8_interp_dataset = mask_interval(client8_dataset, client8_dims, low=24, high=48, output_ids=[0])
-client8_config = ModelConfig(shared_task_hps=True, isotopic_tasks=False, isotopic_output_in_grid=True, isotopic_output_in_tasks=True)
-client8_base_params = Parameters(
+T, N, C = single_output_dataset.outputs.shape
+single_output_dims = Dimensions(T=T, K=1, I=I, C=C, O=1, N=N, G=N)
+single_output_interp_dataset, single_output_held_out = interp_remover(single_output_dataset)
+
+single_output_init_params = Parameters(
     cluster_mean=ZeroMean(),
     cluster_kernel=VarianceKernel(10.0) * SEKernel(length_scale=1.0),
     task_kernel=VarianceKernel(0.5) * SEKernel(length_scale=1.0),
     noise_kernel=WhiteNoiseKernel(noise=0.05),
 )
-client8_init_params = build_parameters(client8_base_params, client8_dims, client8_config)
+single_output_init_params = build_parameters(single_output_init_params, single_output_dims, model_config)
 
-_, client8_key = jr.split(key)
-client8_grid = _UnionGrid()(client8_interp_dataset.inputs)
-client8_model = BasicModel(prng_key=client8_key, n_clusters=client8_dims.K)
-client8_hyperposterior, client8_mixture, client8_params = client8_model.fit(
-    client8_interp_dataset,
-    client8_grid,
-    client8_init_params,
+key, model_key = jr.split(key)
+single_output_grid = UnionGrid(single_output_interp_dataset.inputs)
+single_output_model = BasicModel(prng_key=model_key, n_clusters=single_output_dims.K, predictor=ObservationPredictor())
+
+
+single_output_hyperposterior, single_output_mixture, single_output_params = single_output_model.fit(
+    single_output_interp_dataset,
+    single_output_grid,
+    single_output_init_params,
     n_iter=25,
 )
-client8_predictions = client8_model.predict(client8_interp_dataset, client8_grid, client8_mixture, client8_params)
-client8_cluster_id = int(client8_mixture.assignments[0])
-client8_prediction = client8_predictions[0, client8_cluster_id, 0]
 
 # %%
-_fig_single, _ax_single = plot_dataset(client8_interp_dataset, client8_dims, c_id=0, o_id=0, figsize=(8, 5), alpha=0.12, legend=False)
-for _axis in _ax_single.flat:
-    for _points in _axis.collections:
-        _points.set_facecolor("tab:orange")
-        _points.set_edgecolor("tab:orange")
-_fig_single, _ax_single = plot_single_task_prediction(client8_interp_dataset, client8_grid, client8_dims, client8_hyperposterior,
-    client8_mixture, 0, c_id=0, o_id=0, prediction=client8_prediction, fig=_fig_single, ax=_ax_single, point_color="black",
-    prediction_color="black",
-)
-_fig_single.suptitle(
-    "Client 8 only: interpolation for task 0"
-)
+single_output_prediction = single_output_model.predict(single_output_interp_dataset, single_output_grid, single_output_mixture, single_output_params)[interp_task_id, 0, 0]
+
+# Draw samples from that prediction
+key, sample_key = jr.split(key)
+sample_keys = jr.split(sample_key, 64)  # 64 samples
+single_output_samples = vmap(lambda k: sample_gp(k, single_output_prediction))(sample_keys)
+
+_fig, _ax = plot_dataset(single_output_interp_dataset, single_output_dims, c_id=0, figsize=(8, 10), color_by_task=True, alpha=0.1)
+_fig, _ax = plot_single_task_prediction(single_output_interp_dataset, single_output_grid, single_output_dims, single_output_hyperposterior, single_output_mixture,
+    interp_task_id, c_id=0, samples=single_output_samples, sample_alpha=0.1, fig=_fig, ax=_ax)
+_fig, _ax = plot_task(single_output_held_out, single_output_dims, interp_task_id, c_id=0, fig=_fig, ax=_ax, color="red", marker="x")
+
+_fig.suptitle(f"Prediction task-specific (samples) for task {interp_task_id}")
 plt.show()
 
 # %% [markdown]
 r"""
-Notice how the predictive mean quickly reverts to the prior mean, while the uncertainty explodes! When an interval lacks data across **all tasks** (training *and* prediction) for a given output, the standard *Multi-Task* framework behaves as expected, with a slow drift to the prior mean, with highly increasing variance.
+Notice how the predictive mean quickly reverts to the prior mean, while the uncertainty explodes! When an interval 
+lacks data across **all tasks** (training *and* prediction) for a given output, the standard *Multi-Task* framework 
+behaves as expected, with a slow drift to the prior mean, with highly increasing variance.
 """
 
 # %% [markdown]
 r"""
-## **Forecasting experiment: when *Multi-Task* rescues the prediction**
-Suppose both clients experience an electrical meter outage during the final 24 hours of the last ten tasks/windows (i.e., for both `interp_output_id = 0` **and** `interp_output_id = 1`, but only across the `PRED_TASK_COUNT` prediction tasks). The prediction tasks are displayed in full opacity, whereas the training tasks appear with high transparency in the background.
+## Forecasting experiment: when *Multi-Task* rescues the prediction
+Suppose both clients experience an electrical meter outage during the final 24 hours of the last ten tasks/windows 
+(i.e., for both `interp_output_id = 0` **and** `interp_output_id = 1`, but only across the `PRED_TASK_COUNT` prediction 
+tasks). The prediction tasks are displayed in full opacity, whereas the training tasks appear with high transparency 
+in the background.
 """
 
 # %%
-forecast_low = 48
-forecast_high = 72
-forecast_dataset = mask_interval(pred_dataset, train_dims, low=forecast_low, high=forecast_high)
+forecast_bound = ((48, 72),)
+forecast_remover = SubdomainRemover(bounds=forecast_bound)
+forecast_dataset, forecast_held_out = forecast_remover(pred_dataset)
 
+# %%
 plt.close("all")
 plt.style.use("ggplot")
 plt.rcParams.update({"axes.facecolor": "white", "axes.grid": False, "axes.edgecolor": "black", "axes.labelcolor": "black",
@@ -605,7 +342,7 @@ _fig, _ax = plot_task(train_dataset, train_dims, t_id=0, c_id=0, fig=None, ax=No
     alpha=0.05)
 
 for _axis in _ax.flat:
-    _axis.axvspan(forecast_low, forecast_high, color="gray", alpha=0.2, zorder=0)
+    _axis.axvspan(*forecast_bound[0], color="gray", alpha=0.2, zorder=0)
 
 for _t in range(1, train_dims.T):
     _c = _ggplot_colors[_t % len(_ggplot_colors)]
@@ -615,40 +352,34 @@ for _t in range(pred_dataset.inputs.shape[0]):
     _c = _ggplot_colors[_t % len(_ggplot_colors)]
     _fig, _ax = plot_task(forecast_dataset, train_dims, t_id=_t, fig=_fig, ax=_ax, color=_c, alpha=1.0)
 
-    _x = np.asarray(pred_dataset.inputs[_t, :, 0])
-    for _row in range(train_dims.O):
-        _rows = output_slice(train_dims, _row)
-        _y_full = np.asarray(pred_dataset.outputs[_t, _rows, 0])
-        _y_masked = np.asarray(forecast_dataset.outputs[_t, _rows, 0])
-        _hidden = np.isnan(_y_masked) & ~np.isnan(_y_full)
-
 for _row in range(train_dims.O):
     for _col in range(train_dims.C):
         _current_ax = _ax[_row, _col]
         _current_ax.set_xlabel("Hours")
         _current_ax.set_ylabel("Electricity consumption")
         _current_ax.set_title(f"Client {8 if _row == 0 else 16}")
-
-_fig.suptitle("Forecasting tasks: training background and held-out tasks")
-
 plt.show()
+
 
 # %% [markdown]
 r"""
-Can we reconstruct the missing consumption for the last ten tasks across both clients? This is where *Multi-Task* modeling helps: for both outputs, we leverage the observed trajectories from the training windows on [48h, 72h] to inform the prediction tasks over that exact same interval. Feel free to modify the lower and upper bounds of the missing window.
+Can we reconstruct the missing consumption for the last ten tasks across both clients? This is where *Multi-Task* 
+modeling helps: for both outputs, we leverage the observed trajectories from the training windows on [48h, 72h] to 
+inform the prediction tasks over that exact same interval. Feel free to modify the lower and upper bounds of the 
+missing window.
 
-The parameter structure remains identical to the one used in the interpolation problem, so we do not need to redefine it. Let's simply train the model!
+The parameter structure remains identical to the one used in the interpolation problem, so we do not need to redefine 
+it. Let's simply train the model!
 """
 
 # %%
-model_forecast = BasicModel(prng_key=train_key, n_clusters=train_dims.K, predictor=PREDICTOR)
-_TRAIN_N_ITER = 25
+model_forecast = BasicModel(prng_key=train_key, n_clusters=train_dims.K, predictor=ObservationPredictor())
 
 forecast_hyperposterior, forecast_mixture, forecast_params = model_forecast.fit(
     train_dataset,
     train_grid,
     init_params,
-    n_iter=_TRAIN_N_ITER,
+    n_iter=25,
 )
 
 # %% [markdown]
@@ -658,41 +389,23 @@ Once the model is trained, we compute the predictive distributions for all held-
 
 # %%
 _forecast_task_id = 1
-c_id = 0
 
-if not 0 <= _forecast_task_id < forecast_dataset.inputs.shape[0]:
-    raise ValueError(
-        f"_forecast_task_id must be between 0 and "
-        f"{forecast_dataset.inputs.shape[0] - 1}."
-    )
+# The prediction tasks were never seen during the fit: they get their own grid over the very same
+# points, and the fitted mean-processes assign them a cluster before we predict.
+forecast_grid = MultiOutputUnionGrid(forecast_dataset, model_config, n_outputs=train_dims.O)
+forecast_pred_mixture = MixtureUpdater()(forecast_dataset, forecast_grid, forecast_params.task_kernel, forecast_hyperposterior, forecast_mixture)
+prediction = model_forecast.predict(forecast_dataset, forecast_grid, forecast_pred_mixture, forecast_params)[_forecast_task_id, 0, 0]  # MultivariateNormal, batched (T, K, C, O*G)
 
-forecast_pred_params = single_task_prediction_parameters(forecast_params, train_dims, model_interp_config,
-    n_tasks=forecast_dataset.inputs.shape[0],)
+# Draw samples from that prediction
+_n_samples = 64
+_, _sample_key = jr.split(key)
+_sample_keys = jr.split(_sample_key, _n_samples)
+_samples = vmap(lambda k: sample_gp(k, prediction))(_sample_keys)
 
-forecast_grid = dataset_on_existing_grid(forecast_dataset, train_grid, train_dims,)
-
-forecast_pred_mixture = model_forecast.mixture_updater(forecast_dataset, forecast_grid,
-    forecast_pred_params.task_kernel + forecast_pred_params.noise_kernel, forecast_hyperposterior, forecast_mixture,
-    jitter=model_forecast.jitter,)
-
-forecast_predictions = model_forecast.predictor(forecast_dataset, forecast_grid, forecast_hyperposterior, forecast_pred_params,
-    jitter=model_forecast.jitter,)
-
-k_id = int(forecast_pred_mixture.assignments[_forecast_task_id])
-prediction = forecast_predictions[_forecast_task_id, k_id, c_id]
-
-_forecast_k_id = int(forecast_pred_mixture.assignments[_forecast_task_id])
-
-_fig, _ax = plot_dataset(train_dataset, train_dims, mixture=forecast_mixture, c_id=0, figsize=(8, 10), alpha=0.1)
-for _axis in _ax.flat:
-        for _points in _axis.collections:
-            _points.set_facecolor("tab:orange")
-            _points.set_edgecolor("tab:orange")
-
-_fig, _ax = plot_single_task_prediction(forecast_dataset, train_grid, train_dims, forecast_hyperposterior, forecast_mixture, _forecast_task_id, c_id=0, fig=_fig, ax=_ax, prediction=prediction, point_color="black", prediction_color="black")
-
-plot_hidden_truth(train_dataset, forecast_dataset, train_dims, _forecast_task_id, _fig, _ax, output_id="all")
-
+_fig, _ax = plot_dataset(train_dataset, train_dims, mixture=forecast_mixture, c_id=0, figsize=(8, 10), color_by_task=True, alpha=0.1)
+_fig, _ax = plot_single_task_prediction(forecast_dataset, forecast_grid, train_dims, forecast_hyperposterior, forecast_pred_mixture,
+    _forecast_task_id, c_id=0, samples=_samples, sample_alpha=0.1, fig=_fig, ax=_ax)
+_fig, _ax = plot_task(forecast_held_out, train_dims, _forecast_task_id, c_id=0, fig=_fig, ax=_ax, color="red", marker="x")
 _fig.suptitle(f"Prediction task-specific for task {_forecast_task_id}")
 
 plt.show()
@@ -706,53 +419,46 @@ To measure the value of the information transferred from other tasks, we now fit
 
 # %%
 baseline_task_id = 1
+baseline_dataset, baseline_held_out = forecast_remover(pred_dataset, t_id=baseline_task_id)
 
-if not 0 <= baseline_task_id < pred_dataset.inputs.shape[0]:
-    raise ValueError(
-        f"baseline_task_id must be between 0 and {pred_dataset.inputs.shape[0] - 1}."
+baseline_gp_dataset = GPDataset(inputs=pred_dataset.inputs[baseline_task_id], outputs=baseline_dataset.outputs[baseline_task_id],)
+
+baseline_params = build_gp_parameters(
+        GPParameters(
+            mean=BlockMean(ZeroMean(), n_outputs=train_dims.O, output_hps_in_axes=None),
+            kernel=LCMKernel(
+                kernels=[VarianceKernel(10.0) * SEKernel(length_scale=1.0)],
+                coregionalization_matrices=[jnp.ones((train_dims.O, 1))],
+                kappas=[jnp.ones(train_dims.O)],
+            ),
+            noise_kernel=BlockDiagKernel(
+                WhiteNoiseKernel(noise=0.05),
+                n_outputs=train_dims.O,
+                output_hps_in_axes=None,
+            ),
+        ),
+        n_channels=train_dims.C,
     )
-
-baseline_full_dataset = make_single_task_mo_dataset(pred_dataset, train_dims, baseline_task_id)
-baseline_low = 48
-baseline_high = 72
-baseline_dataset = mask_single_task_window(baseline_full_dataset, train_dims, baseline_low, baseline_high)
-
-baseline_dims = Dimensions(T=1, K=1, I=train_dims.I, C=train_dims.C, O=train_dims.O, N=train_dims.N, G=train_dims.G,)
-baseline_config = ModelConfig(shared_task_hps=True, shared_cluster_hps=True, shared_channel_hps=True, cluster_specific_task_hps=False,
-    isotopic_tasks=True, isotopic_output_in_grid=True, isotopic_output_in_tasks=False,)
-baseline_params0 = build_parameters(base_init_params, baseline_dims, baseline_config)
-_, baseline_key = jr.split(key)
-baseline_model = BasicModel(prng_key=baseline_key, n_clusters=baseline_dims.K, predictor=PREDICTOR)
-baseline_grid = Grid(points=baseline_dataset.inputs[0], output_ids=baseline_dataset.output_ids[0],
-    mappings=jnp.arange(baseline_dims.O * baseline_dims.N)[None, :],)
-baseline_hyperposterior, baseline_mixture, baseline_params = baseline_model.fit(baseline_dataset, baseline_grid, baseline_params0,
-    n_iter=25,)
-baseline_predictions = baseline_model.predict(baseline_dataset, baseline_grid, baseline_mixture, baseline_params,)
-baseline_k_id = int(baseline_mixture.assignments[0])
-baseline_prediction = baseline_predictions[0, baseline_k_id, 0]
-baseline_task_label = int(pred_task_ids[baseline_task_id])
+baseline_model = GPModel()
+baseline_params = baseline_model.fit(baseline_gp_dataset, baseline_params)
+baseline_prediction = baseline_model.predict(baseline_gp_dataset, train_grid, baseline_params,)
 
 # %%
-_fig, _ax = plot_single_task_prediction(baseline_dataset, baseline_grid, baseline_dims, baseline_hyperposterior, baseline_mixture,
-    0, c_id=0, prediction=baseline_prediction, figsize=(8 * baseline_dims.C, 6 * baseline_dims.O),)
+plt.close("all")
+_x = np.asarray(train_grid.points[:, 0])
+_mean = np.asarray(jnp.squeeze(baseline_prediction.mean))
+_cov = np.asarray(jnp.squeeze(baseline_prediction.covariance))
+_std = np.sqrt(np.diag(_cov))
 
-_x = np.asarray(baseline_full_dataset.inputs[0, :baseline_dims.N, 0])
-for _row in range(baseline_dims.O):
-    _rows = slice(_row * baseline_dims.N, (_row + 1) * baseline_dims.N)
-    _y_full = np.asarray(baseline_full_dataset.outputs[0, _rows, 0])
-    _y_masked = np.asarray(baseline_dataset.outputs[0, _rows, 0])
-    _hidden = np.isnan(_y_masked) & ~np.isnan(_y_full)
-    _ax[_row, 0].scatter(_x[_hidden], _y_full[_hidden], color="tab:red", marker="x", s=25,
-        label="held-out truth" if _row == 0 else None,)
-    _ax[_row, 0].axvspan(baseline_low, baseline_high, color="gray", alpha=0.15, zorder=0)
+_fig, _ax = plot_dataset(baseline_dataset, train_dims, t_id=baseline_task_id, c_id=0, figsize=(8, 6),legend=False,)
 
-_handles, _labels = _ax[0, 0].get_legend_handles_labels()
-if "held-out truth" in _labels:
-    _fig.legend(_handles, _labels, loc="outside upper right")
+for _output_id in range(train_dims.O):
+    _pred = slice(_output_id * len(_x), (_output_id + 1) * len(_x))
+    _current_ax = _ax[_output_id, 0]
+    _current_ax.plot(_x, _mean[_pred], color="black")
+    _current_ax.fill_between(_x, _mean[_pred] - 1.96 * _std[_pred], _mean[_pred] + 1.96 * _std[_pred], color="black", alpha=0.2)
 
-_fig.suptitle(
-    f"Single-task multi-output baseline for held-out task {baseline_task_label}"
-)
+plot_task(baseline_held_out, train_dims, baseline_task_id, c_id=0, fig=_fig, ax=_ax, color="red", marker="x")
 plt.show()
 
 # %% [markdown]
@@ -762,7 +468,7 @@ Notice how the predictive mean quickly reverts to the prior mean, while the unce
 
 # %% [markdown]
 r"""
-## **No dark magic here**
+## No dark magic here
 
 The goal of this notebook is to provide an honest look at the model’s capabilities. This section highlights limitations that might not be immediately obvious from the previous results.
 

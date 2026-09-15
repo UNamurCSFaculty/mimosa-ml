@@ -1,14 +1,14 @@
 # %% tags=["remove-cell"]
-import importlib.util, subprocess, sys
+import importlib.util, os, subprocess, sys
 from pathlib import Path
+
 if importlib.util.find_spec("mimosa") is None:
-	# When running in Colab, you can select a GPU for execution and un-comment the next line
-	# subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
+    # When running in Colab, you can select a GPU for execution and un-comment the next line
+    # subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
-# On Colab the notebook runs from /content, where the example's data folder does not exist.
+
 # The docs build runs each notebook from its own level folder, while the data folder is shared at
 # docs/examples/data. On Colab the notebook runs from /content, where neither exists.
-import os
 if Path("../data").is_dir():
     os.chdir("..")
 Path("data").mkdir(exist_ok=True)
@@ -22,8 +22,8 @@ carries several outputs that are observed together and may be *correlated*. Only
 the means/kernels are wrapped for multi-output, and the grid builder becomes its multi-output
 counterpart. Everything else -- fitting, predicting, saving to a single CSV -- is untouched.
 
-Written using jupytext's py:percent format. This script can be run cell-by-cell or as a usual Python
-script.
+Use the "launch" button to run it interactively in Colab or clone the repository and
+run the `examples/unpublished/basic_mo_example.py` script!
 """
 
 # %% [markdown]
@@ -116,7 +116,7 @@ key, gen_key, removal_key = jr.split(key, 3)
 dataset, grid, hyperprior, true_mixture, true_params, cluster_means, tasks = generate_data(
 	gen_key, dims, true_params, model_config, input_range=[(-2.5, 2.5)]
 )
-dataset = RandomDataRemover()(removal_key, dataset, removal_config)
+dataset, _ = RandomDataRemover(removal_key)(dataset, removal_config)
 
 # %% 3bis. Alternatively, you can load a dataset from a local file through load_csv.
 # Check load_csv's doc or open the csv file to see the expected file format.
@@ -157,9 +157,9 @@ init_params = build_parameters(init_params, dims, model_config)
 # %% 6. Fit
 # Grid construction (union of every task's input points) isn't jit-compatible, so it's built once
 # here by the caller, outside of fit/predict, rather than owned by the model — see
-# mimosa.grid.GridBuilder. MultiOutputUnionGrid is UnionGrid's multi-output counterpart: it needs
+# mimosa.grid. MultiOutputUnionGrid is UnionGrid's multi-output counterpart: it needs
 # model_config too, to know whether outputs share grid/task input locations.
-fitted_grid = MultiOutputUnionGrid(n_outputs=dims.O)(dataset, model_config)
+fitted_grid = MultiOutputUnionGrid(dataset, model_config, n_outputs=dims.O)
 
 hyperposterior, fitted_mixture, fitted_params = model.fit(dataset, fitted_grid, init_params, n_iter=50)
 
@@ -187,7 +187,7 @@ plt.show()
 key, sample_key = jr.split(key)
 n_samples = 64
 sample_keys = jr.split(sample_key, n_samples)
-samples = vmap(lambda k: sample_gp(k, prediction.mean, prediction.covariance))(sample_keys)  # (S, O*G)
+samples = vmap(lambda k: sample_gp(k, prediction))(sample_keys)  # (S, O*G)
 
 fig, ax = plot_single_task_prediction(
 	dataset, fitted_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, samples=samples, figsize=(8 * dims.C, 6 * dims.O)

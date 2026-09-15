@@ -1,29 +1,36 @@
 # %% tags=["remove-cell"]
-import importlib.util, subprocess, sys
+import importlib.util, os, subprocess, sys
 from pathlib import Path
-if importlib.util.find_spec("mimosa") is None:
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
-# On Colab the notebook runs from /content, so fetch the dataset the example reads.
 from urllib.request import urlretrieve
-DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/data"
+
+if importlib.util.find_spec("mimosa") is None:
+    # When running in Colab, you can select a GPU for execution and un-comment the next line
+    # subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
+
 # The docs build runs each notebook from its own level folder, while the data folder is shared at
 # docs/examples/data. On Colab the notebook runs from /content, where neither exists.
-import os
 if Path("../data").is_dir():
     os.chdir("..")
 Path("data").mkdir(exist_ok=True)
+
+DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/data"
 for name in ("turnip_train.csv", "turnip_test.csv"):
     if not Path("data", name).exists():
         urlretrieve(f"{DATA_URL}/{name}", Path("data", name))
+
 # %% [md]
 """
 # Predicting turnip prices in Animal Crossing
+
+Let's make you rich...*in Animal Crossing*! 
 
 This example explores two facets of Mimosa:
   - training a typical MagmaClust model on a simple dataset
   - performing model selection based on prediction metrics specific to this use case
 
-Written using jupytext's py:percent format. This script can be run cell-by-cell or as a usual Python script.
+Use the "launch" button to run it interactively in Colab or clone the repository and
+run the `examples/level2/turnip_example.py` script!
 """
 
 # %% [md]
@@ -41,6 +48,8 @@ import jax
 
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_disable_jit", False)
+from functools import partial
+
 import jax.random as jr
 import jax.numpy as jnp
 import numpy as np
@@ -51,12 +60,13 @@ from kernax import BatchModule, ConstantMean, VarianceKernel, SEKernel, WhiteNoi
 
 from mimosa import (
     Dataset, Dimensions, Grid, Mixture, ModelConfig, Parameters,
-    BasicModel, UnionGrid, load_csv, build_parameters, sample_gp,
+    BasicModel, UnionGrid, load_csv, build_parameters, sample_gp, exact_mixture_sampler,
     plot_dataset, plot_clusters, plot_single_task_prediction,
 )
 
 key = jr.PRNGKey(42)
 plt.rcParams['figure.dpi'] = 300
+jax.devices()
 
 SLOTS = ["buy_price", "mon_am", "mon_pm", "tue_am", "tue_pm", "wed_am", "wed_pm",
          "thu_am", "thu_pm", "fri_am", "fri_pm", "sat_am", "sat_pm"]
@@ -84,12 +94,6 @@ def to_wide(dataset):
 	rows = np.broadcast_to(np.arange(len(y))[:, None], x.shape)
 	wide[rows[observed], np.searchsorted(SLOT_INPUTS, x[observed])] = y[observed]
 	return wide
-
-
-def draw_weeks(ax, wide, **kwargs):
-	"""Join each week's observed prices, so a week reads as a curve rather than a cloud."""
-	for prices in wide:
-		ax[0, 0].plot(SLOT_INPUTS, prices, **kwargs)
 
 # %% [md]
 """
@@ -140,16 +144,17 @@ Try and change the ID of the plotted task to get a feeling about the data!
 """
 
 # %%
-fig, ax = plot_dataset(train_data, dims, figsize=(10, 6), alpha=.15)
-draw_weeks(ax, train_wide, color="C0", alpha=.03, linewidth=.7)
+# `kind="line"` joins each week's prices, so a week reads as a curve rather than a cloud of points.
+fig, ax = plot_dataset(train_data, dims, figsize=(10, 6), kind="line", color_by_task=True,
+                       alpha=.12, linewidth=.7)
 fig.suptitle(f"{dims.T} turnip weeks (prices in bells)")
 label_slots(fig)
 plt.show()
 
 # %%
 TASK_ID = 0
-fig, ax = plot_dataset(train_data, dims, figsize=(10, 6), alpha=.15, t_id=TASK_ID)
-draw_weeks(ax, train_wide[[TASK_ID]], color="C0", alpha=.5, linewidth=1.)
+fig, ax = plot_dataset(train_data, dims, figsize=(10, 6), t_id=TASK_ID, kind="line", color_by_task=True,
+                       alpha=.8, linewidth=1., marker="o", markersize=3)
 fig.suptitle(f"Task {TASK_ID} (prices in bells)")
 label_slots(fig)
 plt.show()
@@ -166,12 +171,6 @@ dataset.
 ## Training the model
 
 We are almost set! But before we fit the model, we have to specify the *structure* of the parameters.
-
-We have 4 parameters to specify:
-* cluster_mean: the mean function of our mean-processes, specifying the long-term trend they are centered on
-* cluster_kernel: the kernel function of our mean-processes, specifying their "shape" (highly variable, smooth, etc.)
-* task_kernel: the kernel function of tasks, specifying the shape of their variation around mean-processes
-* noise_kernel: the noise of the points we observed/processes we are learning
 
 The initial values of the hyper-parameters inside the structure do not matter too much, as they will be optimised.
 """
@@ -198,7 +197,7 @@ proportions need no setting -- they are read off the responsibilities the model 
 """
 
 # %%
-grid = UnionGrid()(train_data.inputs)
+grid = UnionGrid(train_data.inputs)
 
 # %% [md]
 """
@@ -232,6 +231,15 @@ plt.show()
 
 # %% [md]
 """
+```{note}
+Notice how the width of the credible interval change from one cluster to the other. This is because of two things:
+* each cluster contains a different number of tasks
+* in the config, we set `shared_cluster_hps=False` and `cluster_hps_in_task=True`, allowing clusters to have
+different variances and length_scales
+```
+
+With the mean-processes and the mixture computed, we can now predict missing values in tasks!
+
 Try changing `t_id` to see a different week and `k_id` to see what the prediction would look like if we assumed
 the task was from that specific cluster!
 
@@ -260,7 +268,7 @@ plt.show()
 key, sample_key = jr.split(key)
 n_samples = 64
 sample_keys = jr.split(sample_key, n_samples)
-samples = vmap(lambda k: sample_gp(k, prediction.mean, prediction.covariance))(sample_keys)  # (S, O*G)
+samples = vmap(lambda k: sample_gp(k, prediction))(sample_keys)  # (S, O*G)
 
 fig, ax = plot_single_task_prediction(
 	train_data, grid, dims, hyperposterior, fitted_mixture, t_id, 0, samples=samples, figsize=(10, 6)
@@ -268,6 +276,14 @@ fig, ax = plot_single_task_prediction(
 fig.suptitle(f"Prediction samples — week {t_id}")
 label_slots(fig)
 plt.show()
+
+# %% [md]
+"""
+```{note}
+The mean of our prediction doesn't cross the task points, as the model determined there is quite a lot of *noise* 
+in the data.
+```
+"""
 
 # %% [md]
 """
@@ -309,8 +325,7 @@ context = Dataset(inputs=jnp.where(seen[..., None], test_inputs, jnp.nan),
 prior_mixture = Mixture(responsibilities=jnp.full((dims.T, dims.K), 1 / dims.K))
 
 
-context_grid = Grid(points=grid.points,
-                    mappings=UnionGrid().compute_mappings(grid.points, context.inputs))
+context_grid = grid.remap(context.inputs)
 test_mixture = model.mixture_updater(
 	context, context_grid, fitted_params.task_kernel + fitted_params.noise_kernel,
 	hyperposterior, prior_mixture, jitter=model.jitter)
@@ -334,15 +349,16 @@ plt.show()
 
 # %%
 N_SAMPLES = 128
-key, cluster_key, sample_key = jr.split(key, 3)
+key, sample_key = jr.split(key)
 
-# One cluster per sample slot, drawn from that week's mixture, then one curve from each: the cloud
-# follows the mixture rather than a single cluster.
-clusters = jr.categorical(cluster_key, jnp.log(test_mixture.responsibilities), shape=(N_SAMPLES, dims.T)).T  # (T, S)
-weeks = jnp.arange(dims.T)[:, None]
-test_samples = sample_gp(sample_key,
-                         test_predictions.mean[:, :, 0][weeks, clusters],        # (T, S, G)
-                         test_predictions.covariance[:, :, 0][weeks, clusters])  # (T, S, G, G)
+# The cloud must follow the whole mixture rather than a single cluster, so we draw across clusters:
+# `exact_mixture_sampler` splits the samples between them in the exact proportions of that week's
+# responsibilities, which a categorical draw would only match in expectation. One call per week.
+test_samples, _ = vmap(partial(exact_mixture_sampler, n_samples=N_SAMPLES))(
+    jr.split(sample_key, dims.T),      # one key per week
+    test_predictions[:, :, 0],         # (T, K) distributions over the G grid points
+    test_mixture.responsibilities,     # (T, K) mixture coefficients
+)  # (T, S, G) and (T, S)
 
 # %%
 fig, ax = plot_single_task_prediction(
@@ -371,7 +387,7 @@ or specific to the majority cluster when there is no sound alternative.
 """
 # %%
 # The mixture we would get if the whole week were known: what the early-week mixture is aiming at.
-full_grid = Grid(points=grid.points, mappings=UnionGrid().compute_mappings(grid.points, test_inputs))
+full_grid = grid.remap(test_inputs)
 full_mixture = model.mixture_updater(
 	Dataset(inputs=test_inputs, outputs=test_data.outputs), full_grid,
 	fitted_params.task_kernel + fitted_params.noise_kernel, hyperposterior, prior_mixture, jitter=model.jitter)
@@ -419,13 +435,18 @@ plt.show()
 
 # %% [md]
 """
+**Try changing the number of clusters, the parameters or the config and see if you can enhance model performances!**
+"""
+
+# %% [md]
+"""
 ## No dark magic here
 
 The goal of this notebook is to give an honest look at the model's capabilities. This section is here to reveal the 
 limitations that might not be obvious from the results.
 
-First, it is obvious that if you want an actual turnip price predictor for Animal Crossing, this is far from the best
-you can use. The code from the game has been reverse-engineered and specific models will have far better performance.
+First, it is obvious that if you want an actual turnip price predictor for Animal Crossing, *this is far from the best
+you can use*. The code from the game has been reverse-engineered and specific models will have far better performance.
 This is just a toy example to demonstrate clustering and model selection.
 
 You can observe it on RMSE which stays high, but also on uncertainty, which is under-estimated: only 80% of the hidden 

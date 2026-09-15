@@ -4,6 +4,6 @@ r"""
 
 🚧 **Placeholder.** This page will show how to drive the EM steps yourself instead of calling `model.fit`.
 
-Written using jupytext's py:percent format. This script can be run cell-by-cell or as a usual Python
-script.
+Use the "launch" button to run it interactively in Colab or clone the repository and
+run the `examples/level3/custom_training_loop.py` script!
 """

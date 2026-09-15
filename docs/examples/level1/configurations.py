@@ -1,14 +1,14 @@
 # %% tags=["remove-cell"]
-import importlib.util, subprocess, sys
+import importlib.util, os, subprocess, sys
 from pathlib import Path
+
 if importlib.util.find_spec("mimosa") is None:
-	# When running in Colab, you can select a GPU for execution and un-comment the next line
-	# subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
+    # When running in Colab, you can select a GPU for execution and un-comment the next line
+    # subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
-# On Colab the notebook runs from /content, where the example's data folder does not exist.
+
 # The docs build runs each notebook from its own level folder, while the data folder is shared at
 # docs/examples/data. On Colab the notebook runs from /content, where neither exists.
-import os
 if Path("../data").is_dir():
     os.chdir("..")
 Path("data").mkdir(exist_ok=True)
@@ -19,6 +19,9 @@ r"""
 
 `ModelConfig` has seven flags. Each is shown below on synthetic data: same dimensions, same base
 kernels, one flag changed at a time.
+
+Use the "launch" button to run it interactively in Colab or clone the repository and
+run the `examples/level1/configurations.py` script!
 """
 
 # %%
@@ -206,7 +209,7 @@ plt.show()
 r"""
 ## `isotopic_tasks=True`
 
-Structural, not a hyperparameter: every task now shares one set of input locations.
+Structural, not a hyperparameter: every task now shares the same set of input locations.
 """
 
 # %%
@@ -230,17 +233,17 @@ plt.show()
 r"""
 ## Reading a hyperparameter back
 
-`build_parameters` wraps each kernel in one batch axis per sharing flag. The task kernel is wrapped
+`build_parameters` add batch axis to hyperparameters depending on the config flags. The task kernel is wrapped
 channel first, then cluster, then task — so the **task** axis is outermost:
 
-	task_kernel[task][cluster][channel]
+	task_kernel.<hp_name>[task][cluster][channel]
 
 The cluster mean and cluster kernel have no task axis:
 
-	cluster_kernel[cluster][channel]
+	cluster_kernel.<hp_name>[cluster][channel]
 
-A shared axis has size 1, so index it with `0`. Indexing returns an ordinary kernel; here
-`length_scale` sits on the right factor of `VarianceKernel(...) * SEKernel(...)`.
+A shared axis has size 1, so index it with `0`. When you combine multiple kernel, e.g: 
+`VarianceKernel(...) * SEKernel(...)`, you can navigate the whole structure using `.left` and `.right`.
 """
 
 # %%
@@ -258,9 +261,9 @@ params = dataclasses.replace(
 )
 
 for t in range(dims.T):
-	print(f"task {t} — length_scale =", params.task_kernel[t][0][0].right.length_scale)
+	print(f"task {t} — length_scale =", params.task_kernel.right.length_scale[t][0][0])
 
-print("cluster 0 mean constant =", params.cluster_mean[0][0].constant)
+print("cluster 0 mean constant =", params.cluster_mean.constant[0][0])
 
 # %% [markdown]
 r"""

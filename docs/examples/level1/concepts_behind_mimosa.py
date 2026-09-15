@@ -1,22 +1,23 @@
 # %% tags=["remove-cell"]
-import importlib.util, subprocess, sys
+import importlib.util, os, subprocess, sys
 from pathlib import Path
 from urllib.request import urlretrieve
+
 if importlib.util.find_spec("mimosa") is None:
-	# When running in Colab, you can select a GPU for execution and un-comment the next line
-	# subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
+    # When running in Colab, you can select a GPU for execution and un-comment the next line
+    # subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
-# On Colab the notebook runs from /content, so fetch the datasets the example reads.
-DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/data"
+
 # The docs build runs each notebook from its own level folder, while the data folder is shared at
 # docs/examples/data. On Colab the notebook runs from /content, where neither exists.
-import os
 if Path("../data").is_dir():
     os.chdir("..")
 Path("data").mkdir(exist_ok=True)
-for csv_name in ("car_trajectories_aligned.csv", "car_trajectories_2c_2o.csv"):
-    if not Path("data", csv_name).exists():
-        urlretrieve(f"{DATA_URL}/{csv_name}", Path("data", csv_name))
+
+DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/data"
+for name in ("car_trajectories_aligned.csv", "car_trajectories_2c_2o.csv"):
+    if not Path("data", name).exists():
+        urlretrieve(f"{DATA_URL}/{name}", Path("data", name))
 
 # %% [markdown]
 r"""
@@ -24,7 +25,7 @@ r"""
 This notebook introduces the core components of the Mimosa framework and illustrates them through concrete examples.
 
 Use the "launch" button to run it interactively in Colab or clone the repository and
-run the `examples/level1/basic_example.py` script!
+run the `examples/level1/concepts_behind_mimosa.py` script!
 
 ---
 
@@ -49,13 +50,13 @@ r"""
 To understand how these concepts interact, let's say you want to **track vehicle trajectories
 in a roundabout** with multiple entry/exit points.
 
-The trajectories come from [openDD](https://arxiv.org/abs/2007.08463) (Breuer et al., *openDD: A
-Large-Scale Roundabout Drone Dataset*, IEEE ITSC 2020). `load_csv` reads them straight into a
+The trajectories come from [openDD](https://arxiv.org/abs/2007.08463). `load_csv` reads them straight into a
 `Dataset`: 284 cars, 128 points each, two channels (X and Y, rescaled to the unit square) sharing
 one time axis.
 """
 
 # %%
+import jax
 import jax.random as jr
 import matplotlib.pyplot as plt
 import numpy as np
@@ -128,9 +129,6 @@ correlation between the two *a priori*: cars can go in any direction in general.
 in *the mixture*. To represent variables of interest whose values are not directly correlated but which can help
 finding an appropriate mixture, Mimosa uses **channels**. This is an analogy of color channels in the convolution
 layers of neural networks: computation paths that are parallel to each other.
-
-`plot_dataset` draws one panel per channel, coloured by each task's cluster assignment. `kind="line"` joins each
-task's points into a line instead of scattering them:
 """
 
 # %%
@@ -140,7 +138,7 @@ plt.show()
 
 # %% [markdown]
 r"""
-Finally, suppose our goal is to predict, along those same axes, both where the car is and where it points.
+Finally, suppose our goal is to predict, along those same axes, both the car previous movement and where it points.
 Its position offset $(dx, dy)$ and its heading $(\cos \theta, \sin \theta)$ are two distinct **outputs**. Because
 a car in a roundabout mostly points where it is going, these two outputs are highly correlated, illustrating how
 the framework leverages relationships across all dimensions.

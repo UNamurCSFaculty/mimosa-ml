@@ -4,6 +4,6 @@ r"""
 
 🚧 **Placeholder.** This page will show how to fit on mini-batches of tasks rather than the full dataset.
 
-Written using jupytext's py:percent format. This script can be run cell-by-cell or as a usual Python
-script.
+Use the "launch" button to run it interactively in Colab or clone the repository and
+run the `examples/level3/stochastic_learning.py` script!
 """

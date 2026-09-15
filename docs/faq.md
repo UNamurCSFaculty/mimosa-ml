@@ -20,7 +20,7 @@ The name `mimosa` was already taken on PyPI. Install `mimosa-ml`, import `mimosa
 
 No — that is a large part of the point. Set `isotopic_tasks=False` in `ModelConfig` and each task
 carries its own inputs, with its own number of missing points. The grid the mean-processes live on
-is built separately, usually with `UnionGrid()(dataset.inputs)`.
+is built separately, usually with `UnionGrid(dataset.inputs)`.
 
 ## How do I choose the number of clusters `K`?
 

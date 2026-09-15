@@ -1,14 +1,14 @@
 # %% tags=["remove-cell"]
-import importlib.util, subprocess, sys
+import importlib.util, os, subprocess, sys
 from pathlib import Path
+
 if importlib.util.find_spec("mimosa") is None:
-	# When running in Colab, you can select a GPU for execution and un-comment the next line
-	# subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
+    # When running in Colab, you can select a GPU for execution and un-comment the next line
+    # subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
-# On Colab the notebook runs from /content, where the example's data folder does not exist.
+
 # The docs build runs each notebook from its own level folder, while the data folder is shared at
 # docs/examples/data. On Colab the notebook runs from /content, where neither exists.
-import os
 if Path("../data").is_dir():
     os.chdir("..")
 Path("data").mkdir(exist_ok=True)
@@ -26,8 +26,8 @@ a known, non-trainable noise.
 Everything in between is the ordinary pipeline of [the basic example](basic_example.ipynb). Only the
 last step differs: predictions live in log-odds space and are mapped back to probabilities.
 
-Written using jupytext's py:percent format. This script can be run cell-by-cell or as a usual Python
-script.
+Use the "launch" button to run it interactively in Colab or clone the repository and
+run the `examples/level2/binary_classif_example.py` script!
 """
 
 # %% [markdown]
@@ -143,7 +143,7 @@ print(f"{dims.N} points per task -> {n_groups} groups; "
 
 # The grid is built here rather than at fitting time, because the wrapped dataset's dimensions are
 # read off it: binning collapses every task onto the lattice, INTERVAL=0 keeps the observed points.
-fitted_grid = UnionGrid()(wrapped.inputs)
+fitted_grid = UnionGrid(wrapped.inputs)
 
 # The wrapped dataset has its own shape and its own sharing structure -- both taken from the data
 # rather than assumed, since they differ between the binned and the unbinned case.
@@ -207,7 +207,7 @@ prediction = predictions[t_id, k_id, c_id]
 
 key, sample_key = jr.split(key)
 n_samples = 256
-samples = vmap(lambda k: sample_gp(k, prediction.mean, prediction.covariance))(jr.split(sample_key, n_samples))
+samples = vmap(lambda k: sample_gp(k, prediction))(jr.split(sample_key, n_samples))
 
 # %% [markdown]
 """

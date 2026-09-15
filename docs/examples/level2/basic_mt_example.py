@@ -1,15 +1,24 @@
 # %% tags=["remove-cell"]
-import importlib.util, subprocess, sys
+import importlib.util, os, subprocess, sys
 from pathlib import Path
-if importlib.util.find_spec("mimosa") is None:
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
-# On Colab the notebook runs from /content, where the example's data folder does not exist.
 from urllib.request import urlretrieve
-DATA_URL = "https://raw.githubusercontent.com/SimLej18/mimosa-ml/main/docs/examples/data"
+
+if importlib.util.find_spec("mimosa") is None:
+    # When running in Colab, you can select a GPU for execution and un-comment the next line
+    # subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
+
+# The docs build runs each notebook from its own level folder, while the data folder is shared at
+# docs/examples/data. On Colab the notebook runs from /content, where neither exists.
+if Path("../data").is_dir():
+    os.chdir("..")
 Path("data").mkdir(exist_ok=True)
+
+DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/data"
 for name in ("train_swimmers.csv", "test_swimmers.csv"):
     if not Path("data", name).exists():
         urlretrieve(f"{DATA_URL}/{name}", Path("data", name))
+
 # %% [markdown]
 """
 # Basic multi-task usage of Mimosa
@@ -21,8 +30,8 @@ The setting is deliberately kept simple: every swimmer is a task and they all fo
 pattern, so `K=1` (no clustering). There is also a single channel and a single output (`C=1`, `O=1`),
 so the only structure Mimosa actually uses is the multi-task sharing.
 
-Written using jupytext's py:percent format. This script can be run cell-by-cell or as a usual Python
-script.
+Use the "launch" button to run it interactively in Colab or clone the repository and
+run the `examples/level2/basic_mt_example.py` script!
 """
 
 # %% [markdown]
@@ -50,9 +59,11 @@ from mimosa import (
 	load_csv, build_parameters, sample_gp,
 	plot_dataset, plot_clusters, plot_single_task_prediction,
 )
+from mimosa.mixture import MixtureUpdater
 
 key = jr.PRNGKey(42)
 plt.rcParams['figure.dpi']=300
+jax.devices()
 
 # %% [markdown]
 """
@@ -82,8 +93,8 @@ grid, which we build later as the union of every swimmer's inputs.
 # %% 2. Configuration
 # The fitting grid is the union of every swimmer's input points, and G is its size. Grid
 # construction isn't jit-compatible, so it's done here by the caller, outside of fit/predict, rather
-# than owned by the model -- see mimosa.grid.GridBuilder.
-fitted_grid = UnionGrid()(train_data.inputs)
+# than owned by the model -- see mimosa.grid.
+fitted_grid = UnionGrid(train_data.inputs)
 G = len(fitted_grid.points)
 
 # Dimensions: T tasks, K clusters, I input dims, C channels, O correlated outputs, N points
@@ -121,7 +132,7 @@ plt.show()
 
 # %%
 t_id = 0
-fig, ax = plot_dataset(train_data, dims, figsize=(8 * dims.C, 6), alpha=.15, t_id=t_id)
+fig, ax = plot_dataset(train_data, dims, figsize=(8 * dims.C, 6), alpha=.15, t_id=t_id, kind="line")
 fig.suptitle(f"Swimmer {t_id}")
 plt.show()
 
@@ -129,13 +140,7 @@ plt.show()
 """
 ## Training the model
 
-A model is described by 4 parameters:
-* `cluster_mean`: the mean function of the mean-process, i.e. the long-term pattern every swimmer is
-  centered on
-* `cluster_kernel`: the kernel of the mean-process, i.e. its "shape" (smooth, wiggly, periodic...)
-* `task_kernel`: the kernel of the tasks, i.e. how they vary around their mean-process
-* `noise_kernel`: the noise on the observed points
-
+Let's build our usual 4 parameters!
 The initial values do not matter too much -- they are optimised during fitting -- but their structure
 does, which is what `build_parameters` takes care of. The values below are expressed in the data's
 own units: inputs span ~10-20 and outputs sit around ~65.
@@ -160,7 +165,7 @@ init_params = build_parameters(init_params, dims, model_config)
 
 # %% 5. Fit
 # The grid was already built and its size stored in `dims.G` (see section 2).
-hyperposterior, fitted_mixture, fitted_params = model.fit(train_data, fitted_grid, init_params, n_iter=50)
+hyperposterior, fitted_mixture, fitted_params = model.fit(train_data, fitted_grid, init_params, n_iter=10)
 
 # %% 6. Plot the fitted cluster (mean-process)
 fig, ax = plot_dataset(train_data, dims, mixture=fitted_mixture, figsize=(8 * dims.C, 6), alpha=.1)
@@ -178,7 +183,9 @@ single cluster here there is only one, so the prediction for a swimmer is direct
 """
 
 # %% 7. Predict
-predictions = model.predict(train_data, fitted_grid, fitted_mixture, fitted_params)  # MultivariateNormal, batched (T, K, C, O*G)
+test_grid = UnionGrid(test_data.inputs)
+test_mixture = MixtureUpdater()(test_data, test_grid, fitted_params.task_kernel, hyperposterior, fitted_mixture)
+predictions = model.predict(test_data, test_grid, test_mixture, fitted_params)  # MultivariateNormal, batched (T, K, C, O*G)
 
 c_id = 0
 k_id = int(fitted_mixture.assignments[t_id])  # task's cluster (here always 0, since K=1)
@@ -186,7 +193,7 @@ prediction = predictions[t_id, k_id, c_id]
 
 # %% 8. Plot the prediction: observed points, the mean-process, and the predictive mean + confidence interval
 fig, ax = plot_single_task_prediction(
-	train_data, fitted_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, prediction=prediction, figsize=(8 * dims.C, 6)
+	test_data, fitted_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, prediction=prediction, figsize=(8 * dims.C, 6)
 )
 fig.suptitle(f"Prediction — swimmer {t_id}")
 plt.show()
@@ -195,7 +202,7 @@ plt.show()
 key, sample_key = jr.split(key)
 n_samples = 64
 sample_keys = jr.split(sample_key, n_samples)
-samples = vmap(lambda k: sample_gp(k, prediction.mean, prediction.covariance))(sample_keys)  # (S, O*G)
+samples = vmap(lambda k: sample_gp(k, prediction))(sample_keys)  # (S, O*G)
 
 fig, ax = plot_single_task_prediction(
 	train_data, fitted_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, samples=samples, figsize=(8 * dims.C, 6)

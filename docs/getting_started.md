@@ -30,7 +30,7 @@ dataset, *_ = generate_data(jr.PRNGKey(0), dims, base_params, config, input_rang
 init_params = build_parameters(base_params, dims, config)
 
 # We define the grid of points we will train and predict on, and our model
-grid = UnionGrid()(dataset.inputs)
+grid = UnionGrid(dataset.inputs)
 model = BasicModel(jr.PRNGKey(1), n_clusters=dims.K)
 
 # --- Fitting --- #
@@ -56,7 +56,7 @@ predictions = model.predict(dataset, grid, mixture, fitted_params)
   the observation noise.
 
 `Grid`
-: The input locations the mean-processes live on. `UnionGrid()(dataset.inputs)` reuses every
+: The input locations the mean-processes live on. `UnionGrid(dataset.inputs)` reuses every
   observed location; `RegularGrid` and `KMeansGrid` build smaller ones.
 
 `BasicModel`
