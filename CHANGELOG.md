@@ -24,6 +24,7 @@ before upgrading.
   multivariate normals, one i.i.d. sample per key or `n_samples` with exact cluster proportions.
 * `mimosa.synthetic.SubdomainRemover`: hold out a region of the input space, for every task or for a
   single task/cluster/channel/output — `SubdomainRemover(bounds=((10., 25.),))(dataset, t_id=3)`.
+* `stiffness` argument to `KMeansMixtureInitialiser`, passed through to `soft_kmeans`.
 
 ### Changed
 

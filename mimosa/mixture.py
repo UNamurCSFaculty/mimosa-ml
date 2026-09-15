@@ -92,18 +92,22 @@ class KMeansMixtureInitialiser(MixtureInitialiser):
 		the count is read off the shapes instead and this attribute is not needed.
 	n_restarts
 		Number of k-means restarts to run, keeping the best. See `soft_kmeans`.
+	stiffness
+		Softmax inverse-temperature the k-means assigns responsibilities with. See `soft_kmeans`.
 	"""
 
 	prng_key: Array
 	n_clusters: int
 	n_outputs: int
 	n_restarts: int
+	stiffness: float
 
-	def __init__(self, prng_key, n_clusters: int, n_outputs: int = 1, n_restarts: int = 64):
+	def __init__(self, prng_key, n_clusters: int, n_outputs: int = 1, n_restarts: int = 64, stiffness: float = 1.0):
 		self.prng_key = prng_key
 		self.n_clusters = n_clusters
 		self.n_outputs = n_outputs
 		self.n_restarts = n_restarts
+		self.stiffness = stiffness
 
 	def _output_ids(self, dataset: Dataset) -> tuple[int, None | Array]:
 		"""
@@ -154,7 +158,9 @@ class KMeansMixtureInitialiser(MixtureInitialiser):
 		# global mean -- one cluster holding every task.
 		features = (features - features.mean(axis=0)) / jnp.maximum(features.std(axis=0), 1e-9)
 
-		_, resp = soft_kmeans(self.prng_key, features, self.n_clusters, n_restarts=self.n_restarts)
+		_, resp = soft_kmeans(
+			self.prng_key, features, self.n_clusters, stiffness=self.stiffness, n_restarts=self.n_restarts
+		)
 		return Mixture(responsibilities=resp)
 
 
