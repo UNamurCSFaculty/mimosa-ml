@@ -57,7 +57,7 @@ from mimosa import (
 	Dimensions, ModelConfig, Parameters,
 	BasicModel, UnionGrid,
 	load_csv, build_parameters, sample_gp,
-	plot_dataset, plot_clusters, plot_single_task_prediction, KMeansGrid,
+	plot_dataset, plot_clusters, plot_single_task_prediction, RegularGrid, NearestInputMapper
 )
 from mimosa.mixture import MixtureUpdater
 
@@ -95,7 +95,7 @@ grid, which we build later as the union of every swimmer's inputs.
 # construction isn't jit-compatible, so it's done here by the caller, outside of fit/predict, rather
 # than owned by the model -- see mimosa.grid.
 key, grid_key = jr.split(key)
-fitted_grid = KMeansGrid(grid_key, train_data.inputs, n_points=256)
+fitted_grid = RegularGrid(train_data.inputs, bounds=((10., 20),), n_points=256, input_mapper=NearestInputMapper())
 G = len(fitted_grid.points)
 
 # Dimensions: T tasks, K clusters, I input dims, C channels, O correlated outputs, N points
@@ -169,7 +169,7 @@ init_params = build_parameters(init_params, dims, model_config)
 hyperposterior, fitted_mixture, fitted_params = model.fit(train_data, fitted_grid, init_params, n_iter=10)
 
 # %% 6. Plot the fitted cluster (mean-process)
-fig, ax = plot_dataset(train_data, dims, mixture=fitted_mixture, figsize=(8 * dims.C, 6), alpha=.1)
+fig, ax = plot_dataset(train_data, dims, mixture=fitted_mixture, figsize=(8 * dims.C, 6), alpha=.05, color_by_task=True)
 fig, ax = plot_clusters(fitted_grid, dims, hyperposterior=hyperposterior, figsize=(8 * dims.C, 6), fig=fig, ax=ax)
 fig.suptitle("Fitted mean-process on the dataset")
 plt.show()
@@ -185,7 +185,7 @@ single cluster here there is only one, so the prediction for a swimmer is direct
 
 # %% 7. Predict
 key, grid_key = jr.split(key)
-test_grid = KMeansGrid(grid_key, test_data.inputs, n_points=256)
+test_grid = RegularGrid(test_data.inputs, bounds=((10., 20),), n_points=256, input_mapper=NearestInputMapper())
 test_mixture = MixtureUpdater()(test_data, test_grid, fitted_params.task_kernel, hyperposterior, fitted_mixture)
 predictions = model.predict(test_data, test_grid, test_mixture, fitted_params)  # MultivariateNormal, batched (T, K, C, O*G)
 
@@ -195,7 +195,7 @@ prediction = predictions[t_id, k_id, c_id]
 
 # %% 8. Plot the prediction: observed points, the mean-process, and the predictive mean + confidence interval
 fig, ax = plot_single_task_prediction(
-	test_data, fitted_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, prediction=prediction, figsize=(8 * dims.C, 6)
+	test_data, test_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, prediction=prediction, figsize=(8 * dims.C, 6)
 )
 fig.suptitle(f"Prediction — swimmer {t_id}")
 plt.show()
@@ -207,7 +207,7 @@ sample_keys = jr.split(sample_key, n_samples)
 samples = vmap(lambda k: sample_gp(k, prediction))(sample_keys)  # (S, O*G)
 
 fig, ax = plot_single_task_prediction(
-	train_data, fitted_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, samples=samples, figsize=(8 * dims.C, 6)
+	test_data, test_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, samples=samples, figsize=(8 * dims.C, 6)
 )
 fig.suptitle(f"Prediction samples — swimmer {t_id}")
 plt.show()

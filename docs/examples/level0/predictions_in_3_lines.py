@@ -89,6 +89,6 @@ the underlying components of the framework is often required to run much more co
 experiments.
 
 Still, hopefully this example may have convinced you that the underlying framework can be interesting to you!
-Maybe, you where even able to run this full pipeline on you own data! If you want to explore the framework
+Maybe, you were even able to run this full pipeline on you own data! If you want to explore the framework
 one step at a time, start at {doc}`/examples/level1/basic_example`. You'll be able to run full experiment in no time!
 """
