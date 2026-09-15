@@ -74,7 +74,7 @@ full grid becomes too large, use a coarser one (`RegularGrid`, `KMeansGrid`) or 
 
 ## Is the API stable?
 
-Not yet — Mimosa is `v0.4.0-alpha`. Version-lock your dependency and read `CHANGELOG.md` when
+Not yet — Mimosa is `v0.5.0-alpha`. Version-lock your dependency and read `CHANGELOG.md` when
 upgrading.
 
 ## How do I cite Mimosa, and can I contribute?

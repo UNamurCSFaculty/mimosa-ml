@@ -9,7 +9,7 @@ before upgrading.
 
 ---
 
-## Unreleased
+## [v0.5.0-alpha] — 2026-09-15
 
 ### Added
 
@@ -33,6 +33,9 @@ before upgrading.
   units (`unscale_grid`, `unscale_distribution`, `unscale_dataset`). Exported as `mimosa.Scaler`.
 * `mimosa.pipelines.TrainTestPipeline`: load two CSVs, fit, predict and plot, with every modelling
   choice fixed and every result de-normalised. Not re-exported by the root module.
+* `Dataset.__getitem__`: index a dataset's tasks jointly across `inputs`, `outputs`,
+  `known_output_noise` and `output_ids` — `dataset[3]` keeps the batch axis (length 1), while a
+  slice, list or tuple returns the matching sub-`Dataset`.
 
 ### Changed
 
@@ -40,6 +43,8 @@ before upgrading.
 * Grids build themselves: `UnionGrid(dataset.inputs)` instead of `UnionGrid()(dataset.inputs)`, and
   likewise `RegularGrid(inputs, bounds=..., n_points=...)`, `KMeansGrid(key, inputs, n_points=...)`
   and `MultiOutputUnionGrid(dataset, config, n_outputs=...)`.
+* `KMeansMixtureInitialiser`'s default `n_restarts` goes from 8 to 64, for more stable
+  initialisations at a higher initialisation cost.
 
 ### Removed
 
@@ -48,6 +53,11 @@ before upgrading.
 * Data removers take their PRNG key at construction, return `(kept, removed)` instead of one
   `Dataset`, and no longer take a `grid`: `RandomDataRemover(key)(dataset, config)`. A subclass now
   implements `removal_mask` instead of `__call__`.
+
+### Fixed
+
+* Task kernels built with `shared_task_hps` are no longer locked to the number of tasks they were
+  built for, so a model fitted on `T` tasks can be called on a dataset of a different length.
 
 ---
 
@@ -416,6 +426,7 @@ tasks as a mixture of Magma GPs, multi-dimensional inputs and (uncorrelated) out
 predictions with uncertainty quantification, Kernax kernel/mean integration, and full JAX/Equinox
 compatibility for `vmap`/`grad`/`jit`.
 
+[v0.5.0-alpha]: https://github.com/UNamurCSFaculty/mimosa-ml/releases/tag/v0.5.0-alpha
 [v0.4.0-alpha]: https://github.com/UNamurCSFaculty/mimosa-ml/releases/tag/v0.4.0-alpha
 [v0.3.0-alpha]: https://github.com/UNamurCSFaculty/mimosa-ml/releases/tag/v0.3.0-alpha
 [v0.2.0]: https://github.com/UNamurCSFaculty/mimosa-ml/releases/tag/v0.2.0
