@@ -21,13 +21,13 @@ for name in ("train_swimmers_256.csv", "test_swimmers_128.csv"):
 
 # %% [markdown]
 """
-# Level 0 — predictions in 3 lines
+# Level 0 — predictions in 5 lines
 
 Two CSVs — swimmers to learn from, swimmers to predict — and three lines of code. `TrainTestPipeline`
 fixes every modelling choice to its most common setting, so there is nothing to configure.
 
 Use the "launch" button to run it interactively in Colab or clone the repository and
-run the `examples/level0/predictions_in_3_lines.py` script!
+run the `examples/level0/predictions_in_5_lines.py` script!
 """
 
 # %%
@@ -42,12 +42,14 @@ from mimosa.pipelines import TrainTestPipeline
 
 # %% [markdown]
 """
-## The three lines
+## The five lines
 """
 
 # %%
 mimosa = TrainTestPipeline(n_clusters=2, prng_key=jr.PRNGKey(42))
-mimosa.load_train_data("data/train_swimmers_256.csv").load_test_data("data/test_swimmers_128.csv").fit()
+mimosa.load_train_data("data/train_swimmers_256.csv")
+mimosa.load_test_data("data/test_swimmers_128.csv")
+mimosa.fit()
 predictions = mimosa.predict()
 
 # %% [markdown]
