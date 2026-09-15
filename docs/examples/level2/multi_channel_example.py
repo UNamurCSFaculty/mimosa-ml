@@ -1,20 +1,23 @@
 # %% tags=["remove-cell"]
-import importlib.util, subprocess, sys
+import importlib.util, os, subprocess, sys
 from pathlib import Path
+from urllib.request import urlretrieve
+
 if importlib.util.find_spec("mimosa") is None:
+	# When running in Colab, you can select a GPU for execution and un-comment the next line
+	# subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
 
-try:
-    DATA_DIR = Path(__file__).resolve().parent / "data"
-except NameError:
-    DATA_DIR = Path("data")
-# On Colab the notebook runs from /content, so fetch the dataset the example reads.
-from urllib.request import urlretrieve
-DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/channel/data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-CSV_PATH = DATA_DIR / "car_trajectories_200.csv"
-if not CSV_PATH.exists():
-    urlretrieve(f"{DATA_URL}/car_trajectories_200.csv", CSV_PATH)
+# The docs build runs each notebook from its own level folder, while the data folder is shared at
+# docs/examples/data. On Colab the notebook runs from /content, where neither exists.
+if Path("../data").is_dir():
+    os.chdir("..")
+Path("data").mkdir(exist_ok=True)
+
+DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/data"
+for name in ("car_trajectories_200.csv",):
+    if not Path("data", name).exists():
+        urlretrieve(f"{DATA_URL}/{name}", Path("data", name))
 
 # %% [markdown]
 """
@@ -74,7 +77,7 @@ aligned onto a common time grid: X and Y position over time, for each car. We'll
 """
 
 # %%
-dataset = load_csv(CSV_PATH)
+dataset = load_csv("data/car_trajectories_200.csv")
 T, N = dataset.outputs.shape[0], dataset.inputs.shape[1]
 x, y = np.asarray(dataset.outputs[..., 0]), np.asarray(dataset.outputs[..., 1])
 
@@ -94,8 +97,8 @@ its own Gaussian Process, never cross-covaried. An **output**, by contrast, is o
 move together. Channels don't talk to each other through covariance at all -- they only interact
 through the mixture: tasks are clustered once, from the sum of every channel's log-likelihood.
 
-This example is only about `C`. For `O`, see [the multi-output example](../basic_mo_example.ipynb);
-for the ordinary fit/predict pipeline this one builds on, see [the basic example](../basic_example.ipynb).
+This example is only about `C`. For `O`, see [the multi-output example](multi_output_example.ipynb);
+for the ordinary fit/predict pipeline this one builds on, see [the basic example](../level1/basic_example.ipynb).
 
 ## Initialisation
 """
@@ -138,7 +141,7 @@ params = build_parameters(Parameters(
 	task_kernel=VarianceKernel(0.01) * SEKernel(length_scale=0.2),
 	noise_kernel=WhiteNoiseKernel(noise=0.001),
 ), dims, config)
-grid = UnionGrid()(dataset.inputs)
+grid = UnionGrid(dataset.inputs)
 
 key, model_key = jr.split(key)
 model = BasicModel(prng_key=model_key, n_clusters=K)
@@ -255,7 +258,7 @@ def plot_masked_prediction(dataset_masked, mixture_masked, c_id, key, title):
 	k_id = int(mixture_masked.assignments[t_demo])
 	prediction = model.predict(dataset_masked, grid, mixture_masked, fitted_params)[t_demo, k_id, c_id]
 	sample_keys = jr.split(key, 20)
-	samples = jax.vmap(lambda k: sample_gp(k, prediction.mean, prediction.covariance))(sample_keys)
+	samples = jax.vmap(lambda k: sample_gp(k, prediction))(sample_keys)
 	fig, ax = plot_single_task_prediction(
 		dataset_masked, grid, dims, hyperposterior, mixture_masked, t_demo, c_id,
 		prediction=prediction, samples=samples, ci_alpha=0, figsize=(8, 4),
@@ -321,7 +324,7 @@ r"""
 ## No dark magic here
 
 Why treat X and Y as channels (`C=2`) at all, instead of correlated outputs (`O=2`, as
-[the multi-output example](../basic_mo_example.ipynb) does)?
+[the multi-output example](multi_output_example.ipynb) does)?
 
 There is a cluster-like structure in this roundabout dataset, and clustering is exactly where
 channels earn their keep: the mixture is the mechanism that lets X and Y each vote on the same

@@ -202,18 +202,41 @@ We operate in a *Multi-Output* setting, so both $k_{\theta_k}(\cdot,\cdot)$ and 
 # %% [markdown]
 r"""
 Depending on the specific problem you want to tackle, you can leverage different building blocks within Mimosa:
-- **Single variable, shared pattern** : If you only have one target variable to predict and assume that your observed individuals share a common underlying behavior, the *Multi-Task* framework (link to MT notebook) is your go-to tool. In *Multi-Task*, the common mean process $\mu_0(.)$ enables information sharing across tasks, overcoming the limitations of classic GPs when making predictions far from a target task's observed data. For mathematical details, please refer to Arthur Leroy, Pierre Latouche, Benjamin Guedj, and Servane Gey. MAGMA: inference and prediction using multi-task Gaussian processes with common mean. *Machine Learning*, 111(5):1821–1849, May 2022.
-
-
-  <br>
-
-- **Single variable, grouped patterns**: If you still have a single target variable, but the trajectories of your individuals naturally separate into distinct subgroups, the *Multi-Task Clustering* framework (link to MTClust notebook) has you covered. *Multi-Task Clustering* is an extension of the *Multi-Task* approach: it introduces multiple mean GPs (instead of a single mean GP shared by all tasks in the dataset), each associated with a specific cluster. For further information, please refer to Arthur Leroy, Pierre Latouche, Benjamin Guedj, and Servane Gey. Cluster-specific predictions with multi-task Gaussian processes. *Journal of Machine Learning Research*, 24(5):1–49, 2023.
-
-  <br>
-
-- **Multidimensional variable, clustered patterns**: If the target variable you aim to predict is multidimensional, and your observed individuals can be grouped into distinct clusters (similar to the *Multi-Task Clustering* approach), the *Multi-Channel* framework (link to MC notebook) will help you share information across these dimensions. In *Multi-Channel*, the clustering mixture is used to transfer information from one channel to another (while channels remain conditionally independent given the mixture). The formal mathematical formulation is currently pending publication.
+- **Single variable, shared pattern** : If you only have one target variable to predict and assume that your observed 
+individuals share a common underlying behavior, the *Multi-Task* framework is your go-to tool (see the 
+[swimmer performance example](../level2/basic_mt_example.ipynb)). 
+In *Multi-Task*, the common mean process $\mu_0(.)$ enables information sharing across tasks, overcoming the 
+limitations of classic GPs when making predictions far from a target task's observed data. For mathematical details, 
+please refer to Arthur Leroy, Pierre Latouche, Benjamin Guedj, and Servane Gey. MAGMA: inference and prediction using 
+multi-task Gaussian processes with common mean. *Machine Learning*, 111(5):1821–1849, May 2022.
 
   <br>
 
-- **Multiple variables, shared patterns**: If you need to predict multiple correlated target variables, and assume a shared underlying pattern across individuals for each of them, the *Multi-Output Multi-Task* framework (link to MOMT notebook) is exactly what you need. By combining the parsimonious underlying mean of the *Multi-Task* approach with the expressive covariance structure of *Multi-Output* models, the *Multi-Output Multi-Task* framework leverages distinct and complementary components of the GP framework. The formal mathematical formulation is currently pending publication.
+- **Single variable, grouped patterns**: If you still have a single target variable, but the trajectories of your 
+individuals naturally separate into distinct subgroups, the *Multi-Task Clustering* framework (see the 
+[turnip prices example](../level2/turnip_example.ipynb)) has you covered. *Multi-Task Clustering* is an 
+extension of the *Multi-Task* approach: it introduces multiple mean GPs 
+(instead of a single mean GP shared by all tasks in the dataset), each associated with a specific cluster. For further 
+information, please refer to Arthur Leroy, Pierre Latouche, Benjamin Guedj, and Servane Gey. Cluster-specific 
+predictions with multi-task Gaussian processes. *Journal of Machine Learning Research*, 24(5):1–49, 2023.
+
+  <br>
+
+- **Multidimensional variable, clustered patterns**: If the target variable you aim to predict is multidimensional, 
+and your observed individuals can be grouped into distinct clusters (similar to the *Multi-Task Clustering* approach), 
+the *Multi-Channel* framework (see the [car trajectories example](../level2/multi_channel_example.ipynb)) 
+will help you share information across these dimensions. 
+In *Multi-Channel*, the clustering mixture is used to transfer information from one channel to another (while 
+channels remain conditionally independent given the mixture). The formal mathematical formulation is currently 
+pending publication.
+
+  <br>
+
+- **Multiple variables, shared patterns**: If you need to predict multiple correlated target variables, and assume a 
+shared underlying pattern across individuals for each of them, the *Multi-Output Multi-Task* framework (see 
+the [electricity consumption example](../level2/multi_output_example.ipynb)) is exactly what you need. By 
+combining the parsimonious underlying mean of the *Multi-Task* approach with 
+the expressive covariance structure of *Multi-Output* models, the *Multi-Output Multi-Task* framework leverages 
+distinct and complementary components of the GP framework. The formal mathematical formulation is currently pending 
+publication.
 """

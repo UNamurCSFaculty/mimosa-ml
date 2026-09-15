@@ -29,6 +29,7 @@ getting_started
 :caption: 📖 Tutorials
 
 How to use these tutorials <tutorials>
+Level 0 — predictions in 3 lines <examples/level0/predictions_in_3_lines>
 tutorials_level1
 tutorials_level2
 tutorials_level3

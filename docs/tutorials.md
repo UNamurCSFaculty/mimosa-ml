@@ -1,7 +1,8 @@
 # How to use these tutorials
 
-The tutorials go from the surface down: **level 1** is what every user needs, **level 2** is what
-the model can do, **level 3** is how to tailor and scale it.
+The tutorials go from the surface down: **level 0** is a prediction in three lines, **level 1** is
+what every user needs, **level 2** is what the model can do, **level 3** is how to tailor and scale
+it.
 
 ## Three ways to read them
 
@@ -19,7 +20,10 @@ Running them locally needs the docs dependencies for plotting; a
 
 ## Where to start
 
-If you have never used Mimosa, read {doc}`examples/level1/basic_example` first — it 
+In a hurry, or just want to see what a prediction looks like →
+{doc}`examples/level0/predictions_in_3_lines`, which ends on everything that shortcut cannot do.
+
+Otherwise, if you have never used Mimosa, read {doc}`examples/level1/basic_example` first — it 
 walks the whole pipeline end to end, and every later one assumes it. From there:
 
 * unsure *why* the model is built this way → {doc}`examples/level1/concepts_behind_mimosa`
