@@ -99,7 +99,7 @@ class KMeansMixtureInitialiser(MixtureInitialiser):
 	n_outputs: int
 	n_restarts: int
 
-	def __init__(self, prng_key, n_clusters: int, n_outputs: int = 1, n_restarts: int = 8):
+	def __init__(self, prng_key, n_clusters: int, n_outputs: int = 1, n_restarts: int = 64):
 		self.prng_key = prng_key
 		self.n_clusters = n_clusters
 		self.n_outputs = n_outputs
