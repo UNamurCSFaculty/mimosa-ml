@@ -284,6 +284,32 @@ class Dataset(eqx.Module):
 	known_output_noise: None | Float[Array, "T ON C"] = None
 	output_ids: None | Int[Array, "#T oN"] = None
 
+	def __getitem__(self, item):
+		"""
+		Index `inputs`, `outputs`, `known_output_noise` and `output_ids` jointly along the batch dimensions.
+		They keep the same number of dimensions even if item is a specific id. Their first axis simply
+		has length 1.
+		"""
+		inputs = self.inputs[0 if self.inputs.shape[0] == 1 else item]
+		outputs = self.outputs[item]
+		known_output_noise = None if self.known_output_noise is None else self.known_output_noise[item]
+		output_ids = None if self.output_ids is None else self.output_ids[0 if self.output_ids.shape[0] == 1 else item]
+
+		if isinstance(item, slice | list | tuple):
+			return Dataset(
+				inputs=inputs,
+				outputs=outputs,
+				known_output_noise=known_output_noise,
+				output_ids=output_ids,
+			)
+		else:
+			return Dataset(
+				inputs=inputs[None, ...],
+				outputs=outputs[None, ...],
+				known_output_noise=None if known_output_noise is None else known_output_noise[None, ...],
+				output_ids=None if output_ids is None else output_ids[None, ...],
+			)
+
 	@property
 	def clean_inputs(self) -> Float[Array, "#T oN I"]:
 		"""
