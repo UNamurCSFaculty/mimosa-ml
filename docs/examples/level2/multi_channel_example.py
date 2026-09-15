@@ -1,23 +1,20 @@
 # %% tags=["remove-cell"]
-import importlib.util, os, subprocess, sys
+import importlib.util, subprocess, sys
 from pathlib import Path
-from urllib.request import urlretrieve
-
 if importlib.util.find_spec("mimosa") is None:
-    # When running in Colab, you can select a GPU for execution and un-comment the next line
-    # subprocess.run([sys.executable, "-m", "pip", "install", "-q", "jax[cuda]"], check=True)
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
 
-# The docs build runs each notebook from its own level folder, while the data folder is shared at
-# docs/examples/data. On Colab the notebook runs from /content, where neither exists.
-if Path("../data").is_dir():
-    os.chdir("..")
-Path("data").mkdir(exist_ok=True)
-
-DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/data"
-for name in ("car_trajectories_200.csv",):
-    if not Path("data", name).exists():
-        urlretrieve(f"{DATA_URL}/{name}", Path("data", name))
+try:
+    DATA_DIR = Path(__file__).resolve().parent / "data"
+except NameError:
+    DATA_DIR = Path("data")
+# On Colab the notebook runs from /content, so fetch the dataset the example reads.
+from urllib.request import urlretrieve
+DATA_URL = "https://raw.githubusercontent.com/UNamurCSFaculty/mimosa-ml/main/docs/examples/channel/data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+CSV_PATH = DATA_DIR / "car_trajectories_200.csv"
+if not CSV_PATH.exists():
+    urlretrieve(f"{DATA_URL}/car_trajectories_200.csv", CSV_PATH)
 
 # %% [markdown]
 """
@@ -31,9 +28,6 @@ The trajectories come from [openDD](https://arxiv.org/abs/2007.08463) (Breuer et
 Large-Scale Roundabout Drone Dataset*, IEEE ITSC 2020): 84,774 drone-tracked vehicle trajectories
 across seven real roundabouts in Wolfsburg and Ingolstadt, Germany, over 62+ hours of recordings.
 This example uses a subset of one roundabout's trajectories.
-
-Use the "launch" button to run it interactively in Colab or clone the repository and
-run the `examples/level2/multi_channel_example.py` script!
 """
 
 # %% [markdown]
@@ -57,15 +51,16 @@ import matplotlib.pyplot as plt
 from kernax import AffineMean, VarianceKernel, SEKernel, WhiteNoiseKernel
 
 from mimosa import (
-	Dimensions, ModelConfig, Parameters, SubdomainRemover,
-	BasicModel, UnionGrid, KMeansMixtureInitialiser, FunctionPredictor, ObservationPredictor,
+	Dataset, Dimensions, ModelConfig, Parameters,
+	BasicModel, UnionGrid, Mixture,
 	load_csv, build_parameters, sample_gp,
 	plot_dataset, plot_clusters, plot_single_task_prediction,
 )
+from mimosa.mixture import MixtureInitialiser, _summary_statistics
+from mimosa.kmeans import soft_kmeans
 
 key = jr.PRNGKey(42)
 plt.rcParams['figure.dpi'] = 300
-jax.devices()
 
 K, STIFFNESS, N_RESTARTS_KMEANS = 6, 50.0, 64
 
@@ -79,7 +74,7 @@ aligned onto a common time grid: X and Y position over time, for each car. We'll
 """
 
 # %%
-dataset = load_csv("data/car_trajectories_200.csv")
+dataset = load_csv(CSV_PATH)
 T, N = dataset.outputs.shape[0], dataset.inputs.shape[1]
 x, y = np.asarray(dataset.outputs[..., 0]), np.asarray(dataset.outputs[..., 1])
 
@@ -102,6 +97,27 @@ through the mixture: tasks are clustered once, from the sum of every channel's l
 This example is only about `C`. For `O`, see [the multi-output example](../basic_mo_example.ipynb);
 for the ordinary fit/predict pipeline this one builds on, see [the basic example](../basic_example.ipynb).
 
+## Initialisation
+"""
+
+# %%
+class StiffKMeansInitialiser(MixtureInitialiser):
+	"""`KMeansMixtureInitialiser`'s own recipe, with `stiffness` exposed instead of fixed at 1.0."""
+	prng_key: jax.Array
+	n_clusters: int
+	stiffness: float
+	n_restarts: int
+
+	def __call__(self, dataset):
+		features = jnp.nan_to_num(_summary_statistics(dataset.outputs))
+		_, resp = soft_kmeans(
+			self.prng_key, features, self.n_clusters, stiffness=self.stiffness, n_restarts=self.n_restarts,
+		)
+		return Mixture(responsibilities=resp)
+
+# %% [markdown]
+"""
+
 ## Configuring and fitting
 
 The model is configured the same way as any other mimosa model. Channel handling introduces one new
@@ -122,13 +138,13 @@ params = build_parameters(Parameters(
 	task_kernel=VarianceKernel(0.01) * SEKernel(length_scale=0.2),
 	noise_kernel=WhiteNoiseKernel(noise=0.001),
 ), dims, config)
-grid = UnionGrid(dataset.inputs)
+grid = UnionGrid()(dataset.inputs)
 
 key, model_key = jr.split(key)
 model = BasicModel(prng_key=model_key, n_clusters=K)
 model = eqx.tree_at(
 	lambda m: m.mixture_initialiser, model,
-	KMeansMixtureInitialiser(prng_key=model_key, n_clusters=K, stiffness=STIFFNESS, n_restarts=N_RESTARTS_KMEANS),
+	StiffKMeansInitialiser(prng_key=model_key, n_clusters=K, stiffness=STIFFNESS, n_restarts=N_RESTARTS_KMEANS),
 )
 hyperposterior, fitted_mixture, fitted_params = model.fit(
 	dataset, grid, params, n_iter=25, freeze_task_parameters=True,
@@ -179,30 +195,30 @@ print("cluster sizes:", cluster_sizes.tolist())
 
 `model.predict` gives an actual posterior distribution for one task. 
 
-First, mask the second half of **both** channels, for a task than mask half of the Y axis. 
+First, mask the second half of **both** channels, for a task than, in the second plot, mask only half of the Y axis for the same task. 
 """
 
 # %%
 cutoff = 64
-# Every trajectory is aligned on the same regular time grid, so the row `cutoff` is one input value.
-second_half = SubdomainRemover(bounds=((float(dataset.inputs[0, cutoff, 0]), float(dataset.inputs[0, -1, 0])),))
 task_kernel = fitted_params.task_kernel + fitted_params.noise_kernel
 
-# Both channels masked, every task, then one E-step against the already-fitted hyperposterior.
-dataset_both_masked, _ = second_half(dataset)
-mixture_both_masked = model.mixture_updater(
-	dataset_both_masked, grid, task_kernel, hyperposterior, fitted_mixture, jitter=model.jitter,
-)
+def mask_and_update(mask_channels, task_ids=slice(None)):
+	"""One E-step against the already-fitted hyperposterior, masking the second half of
+	`mask_channels` for `task_ids` (every task by default)."""
+	masked = np.asarray(dataset.outputs).copy()
+	masked[task_ids, cutoff:, mask_channels] = np.nan
+	dataset_masked = Dataset(inputs=dataset.inputs, outputs=jnp.asarray(masked))
+	mixture_masked = model.mixture_updater(
+		dataset_masked, grid, task_kernel, hyperposterior, fitted_mixture, jitter=model.jitter,
+	)
+	return dataset_masked, mixture_masked
+
+dataset_both_masked, mixture_both_masked = mask_and_update([0, 1])
 resp_both_all = np.asarray(mixture_both_masked.responsibilities)
 t_demo = int(np.argmin(resp_both_all.max(axis=1)))
 resp_both = resp_both_all[t_demo]
 k_true = int(fitted_mixture.assignments[t_demo])
-
-# Same, with only channel 1 (Y) masked, and only for the task we picked above.
-dataset_y_masked, _ = second_half(dataset, t_id=t_demo, c_id=1)
-mixture_y_masked = model.mixture_updater(
-	dataset_y_masked, grid, task_kernel, hyperposterior, fitted_mixture, jitter=model.jitter,
-)
+dataset_y_masked, mixture_y_masked = mask_and_update([1], task_ids=[t_demo])
 resp_y = np.asarray(mixture_y_masked.responsibilities[t_demo])
 
 # %% [markdown]
@@ -229,7 +245,7 @@ plt.show()
 
 # %% [markdown]
 """
-With both channels half gone, responsibility spreads across two clusters and indiuce a genuine doubt about
+With both channels half gone, responsibility spreads across two clusters and induce a genuine doubt about
 which route this car is on. With X still intact, responsibility concentrates back onto the true
 cluster: one fully observed channel is enough to anchor the mixture even with the other half gone.
 """
@@ -239,7 +255,7 @@ def plot_masked_prediction(dataset_masked, mixture_masked, c_id, key, title):
 	k_id = int(mixture_masked.assignments[t_demo])
 	prediction = model.predict(dataset_masked, grid, mixture_masked, fitted_params)[t_demo, k_id, c_id]
 	sample_keys = jr.split(key, 20)
-	samples = jax.vmap(lambda k: sample_gp(k, prediction))(sample_keys)
+	samples = jax.vmap(lambda k: sample_gp(k, prediction.mean, prediction.covariance))(sample_keys)
 	fig, ax = plot_single_task_prediction(
 		dataset_masked, grid, dims, hyperposterior, mixture_masked, t_demo, c_id,
 		prediction=prediction, samples=samples, ci_alpha=0, figsize=(8, 4),
@@ -278,8 +294,14 @@ two independent GPs -- just a way to draw what each pairing would look like as a
 """
 
 # %%
-def plot_xy_samples(samples_x, samples_y, title):
-	fig, ax = plt.subplots(figsize=(6, 6))
+# X is fully observed in this scenario, so pair the known X with each Y sample instead of sampling X too.
+samples_x_y_only = np.tile(x[t_demo][None, :], (samples_y_only.shape[0], 1))
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 6), sharex=True, sharey=True)
+for ax, samples_x, samples_y, title in [
+	(axes[0], samples_x_both, samples_y_both, "X and Y both masked"),
+	(axes[1], samples_x_y_only, samples_y_only, "Y only masked"),
+]:
 	ax.plot(x[t_demo], y[t_demo], color="0.75", linewidth=1, zorder=1, label="full true route")
 	for sx, sy in zip(samples_x, samples_y):
 		ax.plot(sx[cutoff:], sy[cutoff:], color="tab:blue", alpha=0.25, linewidth=1, zorder=2)
@@ -287,15 +309,12 @@ def plot_xy_samples(samples_x, samples_y, title):
 	ax.scatter(x[t_demo, cutoff:], y[t_demo, cutoff:], color="black", marker="x", s=20, zorder=4,
 	           label="hidden truth")
 	ax.set_aspect("equal")
-	ax.set_xlabel("X (rescaled)"); ax.set_ylabel("Y (rescaled)"); ax.legend(fontsize=8)
+	ax.set_xlabel("X (rescaled)")
 	ax.set_title(title)
-	plt.show()
-
-plot_xy_samples(samples_x_both, samples_y_both, f"Car {t_demo}, (X, Y) samples -- X and Y both masked")
-
-# X is fully observed in this scenario, so pair the known X with each Y sample instead of sampling X too.
-samples_x_y_only = np.tile(x[t_demo][None, :], (samples_y_only.shape[0], 1))
-plot_xy_samples(samples_x_y_only, samples_y_only, f"Car {t_demo}, (X, Y) samples -- Y only masked")
+	ax.legend(fontsize=8)
+axes[0].set_ylabel("Y (rescaled)")
+fig.suptitle(f"Car {t_demo}, (X, Y) samples")
+plt.show()
 
 # %% [markdown]
 r"""
@@ -321,5 +340,3 @@ Multi-channel is really reserved for specific problems or computational trade-of
 exploit one particular kind of link through the mixture, cheaply, without taking on multi-output's
 full complexity.
 """
-
-# %%
