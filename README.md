@@ -2,7 +2,7 @@
   <img src="docs/images/logo.png" alt="MIMOSA" width="640">
 </p>
 
-# MIMOSA: Multi-Input Multi-Output Sample Analysis 
+# MIMOSA: Multi-Input Multi-Output Sequence Analysis 
 
 A fully-featured *multi-task Gaussian process framework* for analysing functional data.
 It is based on the [MagmaClust framework](https://jmlr.org/papers/v24/20-1321.html), with many enhancements for efficiency and modularity.
